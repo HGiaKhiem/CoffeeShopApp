@@ -4,10 +4,6 @@ import '../entities/entities_library.dart';
 class HomeController {
   static final supabase = Supabase.instance.client;
 
-  // ============================================================
-  // 🟢 FETCH DỮ LIỆU TỪ SUPABASE
-  // ============================================================
-
   /// 🟩 Lấy danh sách món (Coffee)
   static Future<List<Coffee>> getAllCoffees() async {
     try {

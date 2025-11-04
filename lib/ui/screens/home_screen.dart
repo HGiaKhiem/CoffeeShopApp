@@ -4,6 +4,7 @@ import 'package:flutter_coffee_shop_app/entities/entities_library.dart';
 import 'package:flutter_coffee_shop_app/ui/screens/introduction_screen.dart';
 import 'package:flutter_coffee_shop_app/ui/screens/qr_scan_screen.dart';
 import 'package:flutter_coffee_shop_app/ui/theme/app_theme.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/widgets.dart';
 import 'package:flutter_coffee_shop_app/ui/screens/screens.dart';
 
@@ -15,7 +16,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // ✅ Dữ liệu chính
   List<Coffee> _allCoffees = [];
   List<LoaiMon> _loaiMons = [];
   List<Coffee> _displayedCoffees = [];
@@ -24,15 +24,24 @@ class _HomeScreenState extends State<HomeScreen> {
   int? _selectedCategoryId;
   String _searchQuery = '';
 
+  int? _idBan;
+  int? _idKhach;
+
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _loadInitData();
   }
 
-  Future<void> _loadData() async {
+  /// ✅ Load dữ liệu: bàn + khách + danh sách món
+  Future<void> _loadInitData() async {
+    final prefs = await SharedPreferences.getInstance();
+    _idBan = prefs.getInt('id_ban');
+    _idKhach = prefs.getInt('id_khachhang');
+
     final coffees = await HomeController.getAllCoffees();
     final loaiMons = await HomeController.getAllLoaiMon();
+
     setState(() {
       _allCoffees = coffees;
       _loaiMons = loaiMons;
@@ -41,27 +50,21 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  // ✅ Lọc danh sách theo loại & tìm kiếm
   void _applyFilters() {
     List<Coffee> filtered = _allCoffees;
-
     if (_selectedCategoryId != null) {
-      filtered =
-          HomeController.filterByCategory(filtered, _selectedCategoryId!);
+      filtered = HomeController.filterByCategory(filtered, _selectedCategoryId!);
     }
-
     if (_searchQuery.isNotEmpty) {
       filtered = HomeController.searchCoffees(filtered, _searchQuery);
     }
-
     setState(() => _displayedCoffees = filtered);
   }
 
-  // ✅ Khi chọn chip loại món
   void _onCategorySelected(int idLoai) {
     setState(() {
       if (_selectedCategoryId == idLoai) {
-        _selectedCategoryId = null; // bỏ chọn nếu chọn lại
+        _selectedCategoryId = null;
       } else {
         _selectedCategoryId = idLoai;
       }
@@ -69,7 +72,6 @@ class _HomeScreenState extends State<HomeScreen> {
     _applyFilters();
   }
 
-  // ✅ Khi nhập tìm kiếm
   void _onSearchChanged(String value) {
     _searchQuery = value;
     _applyFilters();
@@ -86,9 +88,14 @@ class _HomeScreenState extends State<HomeScreen> {
             : CustomScrollView(
                 slivers: [
                   // 🧱 AppBar
-                  const SliverPadding(
-                    padding: EdgeInsets.symmetric(horizontal: 22, vertical: 20),
-                    sliver: SliverToBoxAdapter(child: CustomAppBar()),
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 20),
+                    sliver: SliverToBoxAdapter(
+                      child: HomeCustomAppBar(
+                        idBan: _idBan,
+                        idKhach: _idKhach,
+                      ),
+                    ),
                   ),
 
                   // 🧱 Tiêu đề
@@ -114,45 +121,42 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
 
-                  // ☕️ Loại món (chips)
+                  // ☕️ Loại món
                   SliverPadding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 22, vertical: 20),
+                    padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 20),
                     sliver: SliverToBoxAdapter(
                       child: SizedBox(
-                        height: 40,
+                        height: 48,
                         child: ListView.builder(
                           scrollDirection: Axis.horizontal,
                           itemCount: _loaiMons.length,
                           itemBuilder: (context, index) {
                             final loai = _loaiMons[index];
-                            final isActive =
-                                _selectedCategoryId == loai.id_loaimon;
-
+                            final isActive = _selectedCategoryId == loai.id_loaimon;
                             return Padding(
                               padding: const EdgeInsets.only(right: 15),
                               child: ChoiceChip(
-                                label: Text(
-                                  loai.tenloaimon,
-                                  style: isActive
-                                      ? Apptheme.chipActive
-                                      : Apptheme.chipInactive,
+                                label: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  child: Text(
+                                    loai.tenloaimon,
+                                    style: isActive
+                                        ? Apptheme.chipActive
+                                        : Apptheme.chipInactive,
+                                  ),
                                 ),
                                 selected: isActive,
-                                selectedColor:
-                                    Apptheme.accentColor.withOpacity(0.2),
-                                backgroundColor:
-                                    Apptheme.cardChipBackgroundColor,
+                                selectedColor: Apptheme.accentColor.withOpacity(0.25),
+                                backgroundColor: Apptheme.cardChipBackgroundColor,
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(20),
+                                  borderRadius: BorderRadius.circular(22),
                                   side: BorderSide(
                                     color: isActive
                                         ? Apptheme.accentColor
                                         : Apptheme.gray3Color,
                                   ),
                                 ),
-                                onSelected: (_) =>
-                                    _onCategorySelected(loai.id_loaimon),
+                                onSelected: (_) => _onCategorySelected(loai.id_loaimon),
                               ),
                             );
                           },
@@ -161,7 +165,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
 
-                  // 🧾 Featured Drinks (Vertical Cards)
+                  // 🧾 Featured Drinks
                   SliverPadding(
                     padding: const EdgeInsets.symmetric(horizontal: 22),
                     sliver: SliverToBoxAdapter(
@@ -179,7 +183,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                 final coffee = _displayedCoffees[index];
                                 return Padding(
                                   padding: const EdgeInsets.only(right: 15),
-                                  child: VerticalCardWidget(coffee: coffee),
+                                  child: VerticalCardWidget(
+                                    coffee: coffee,
+                                    idBan: _idBan,
+                                    idKhachHang: _idKhach,
+                                  ),
                                 );
                               },
                             ),
@@ -189,10 +197,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
 
-                  // 🧾 Special for You (Horizontal Cards)
+                  // 🧾 Special for You
                   SliverPadding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 22, vertical: 20),
+                    padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 20),
                     sliver: SliverToBoxAdapter(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -217,10 +224,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                   itemBuilder: (context, index) {
                                     final coffee = _displayedCoffees[index];
                                     return Padding(
-                                      padding:
-                                          const EdgeInsets.only(bottom: 15),
-                                      child:
-                                          HorizontalCardWidget(coffee: coffee),
+                                      padding: const EdgeInsets.only(bottom: 15),
+                                      child: HorizontalCardWidget(
+                                        coffee: coffee,
+                                        idBan: _idBan,
+                                        idKhachHang: _idKhach,
+                                      ),
                                     );
                                   },
                                 ),
@@ -252,14 +261,20 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-
-      bottomNavigationBar: const CustomNavBar(),
+      bottomNavigationBar: CustomNavBar(
+        idBan: _idBan ?? 1,
+        idKhach: _idKhach ?? 1,
+      ),
     );
   }
 }
 
-class CustomAppBar extends StatelessWidget {
-  const CustomAppBar({Key? key}) : super(key: key);
+/// 🧭 Custom AppBar hiển thị thông tin khách + bàn
+class HomeCustomAppBar extends StatelessWidget {
+  final int? idBan;
+  final int? idKhach;
+
+  const HomeCustomAppBar({super.key, this.idBan, this.idKhach});
 
   @override
   Widget build(BuildContext context) {
@@ -269,11 +284,13 @@ class CustomAppBar extends StatelessWidget {
         final customer = snapshot.data;
         final imageUrl = customer?.avatarURL ??
             'https://rubeafovywlrgxblfmlr.supabase.co/storage/v1/object/public/avatar/avatar.png';
+        final tenKhach = customer?.tenkh ??
+            (idKhach != null ? 'Khách tại bàn $idBan' : 'Khách hàng');
 
         return Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            // Nút menu trái
+            // Nút menu
             CustomIconButton(
               onTap: () {
                 Navigator.push(
@@ -292,7 +309,7 @@ class CustomAppBar extends StatelessWidget {
               ),
             ),
 
-            // Thông tin khách hàng (avatar + tên)
+            // Avatar + tên khách
             InkWell(
               borderRadius: BorderRadius.circular(25),
               onTap: () {
@@ -305,38 +322,30 @@ class CustomAppBar extends StatelessWidget {
               },
               child: Row(
                 children: [
-                  if (snapshot.connectionState == ConnectionState.waiting)
-                    const SizedBox(
-                      height: 30,
-                      width: 30,
-                      child: CircularProgressIndicator(color: Colors.white),
-                    )
-                  else
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(23),
-                      child: Image.network(
-                        imageUrl,
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(23),
+                    child: Image.network(
+                      imageUrl,
+                      height: 45,
+                      width: 45,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Image.network(
+                        'https://rubeafovywlrgxblfmlr.supabase.co/storage/v1/object/public/avatar/avatar.png',
                         height: 45,
                         width: 45,
                         fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) =>
-                            Image.network(
-                          'https://rubeafovywlrgxblfmlr.supabase.co/storage/v1/object/public/avatar/avatar.png',
-                          height: 40,
-                          width: 40,
-                          fit: BoxFit.cover,
-                        ),
                       ),
                     ),
+                  ),
                   const SizedBox(width: 10),
-                  // Text(
-                  //   customer?.tenkh ?? 'Khách hàng',
-                  //   style: const TextStyle(
-                  //     color: Colors.white,
-                  //     fontWeight: FontWeight.w600,
-                  //     fontSize: 12,
-                  //   ),
-                  // ),
+                  Text(
+                    tenKhach,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                  ),
                 ],
               ),
             ),

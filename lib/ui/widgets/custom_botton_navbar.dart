@@ -3,9 +3,17 @@ import 'package:flutter_coffee_shop_app/ui/screens/home_screen.dart';
 import 'package:flutter_coffee_shop_app/ui/screens/qr_scan_screen.dart';
 import 'package:flutter_coffee_shop_app/ui/theme/app_theme.dart';
 import 'package:stylish_bottom_bar/stylish_bottom_bar.dart';
+import 'package:flutter_coffee_shop_app/ui/screens/cart_screen.dart';
 
 class CustomNavBar extends StatefulWidget {
-  const CustomNavBar({Key? key}) : super(key: key);
+  final int idBan;
+  final int idKhach;
+
+  const CustomNavBar({
+    Key? key,
+    required this.idBan,
+    required this.idKhach,
+  }) : super(key: key);
 
   @override
   State<CustomNavBar> createState() => _CustomNavBarState();
@@ -29,41 +37,62 @@ class _CustomNavBarState extends State<CustomNavBar> {
             selectedIcon: const Icon(Icons.home),
             selectedColor: selectedColor,
             unSelectedColor: unSelectedColor,
-            title: const Text('All'),
+            title: const Text('Trang chủ'),
           ),
           BottomBarItem(
             icon: const Icon(Icons.shopping_bag_rounded),
             selectedIcon: const Icon(Icons.shopping_bag_rounded),
             selectedColor: selectedColor,
             unSelectedColor: unSelectedColor,
-            title: const Text('Completed'),
+            title: const Text('Giỏ hàng'),
           ),
           BottomBarItem(
-            icon: const Icon(Icons.favorite),
-            selectedIcon: const Icon(Icons.favorite),
+            icon: const Icon(Icons.qr_code_2),
+            selectedIcon: const Icon(Icons.qr_code_2),
             selectedColor: selectedColor,
             unSelectedColor: unSelectedColor,
-            title: const Text('Pending'),
+            title: const Text('Quét mã'),
           ),
           BottomBarItem(
-            icon: const Icon(Icons.notification_add_rounded),
-            selectedIcon: const Icon(Icons.notification_add_rounded),
+            icon: const Icon(Icons.notifications),
+            selectedIcon: const Icon(Icons.notifications_active),
             selectedColor: selectedColor,
             unSelectedColor: unSelectedColor,
-            title: const Text('Reminders'),
+            title: const Text('Thông báo'),
           ),
         ],
-        hasNotch: true, // 🔸 bật notch để hiển thị nút giữa
+        hasNotch: true,
         fabLocation: StylishBarFabLocation.center,
         currentIndex: _selectedIndex,
         onTap: (index) {
           setState(() => _selectedIndex = index);
 
-          // 🔹 Chuyển về Home khi chọn tab đầu tiên
+          // 🔹 Tab 0: về Home (dùng push thay vì pushReplacement)
           if (index == 0) {
-            Navigator.pushReplacement(
+            Navigator.push(
               context,
               MaterialPageRoute(builder: (context) => const HomeScreen()),
+            );
+          }
+
+          // 🔹 Tab 1: mở giỏ hàng (truyền idBan, idKhach)
+          if (index == 1) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => CartScreen(
+                  idBan: widget.idBan,
+                  idKhach: widget.idKhach,
+                ),
+              ),
+            );
+          }
+
+          // 🔹 Tab 2: mở quét QR
+          if (index == 2) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const QrScanScreen()),
             );
           }
         },

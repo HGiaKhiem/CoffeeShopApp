@@ -1,22 +1,35 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:flutter_coffee_shop_app/entities/coffee.dart';
+import 'package:flutter_coffee_shop_app/entities/cart_item.dart';
+import 'package:flutter_coffee_shop_app/controllers/cart_controller.dart';
 import 'package:flutter_coffee_shop_app/ui/screens/detail_screen.dart';
 import 'package:flutter_coffee_shop_app/ui/theme/app_theme.dart';
 import 'package:flutter_coffee_shop_app/ui/widgets/custom_filledbutton.dart';
 
 class VerticalCardWidget extends StatelessWidget {
   final Coffee coffee;
-  final VoidCallback? onAddToCart;
+  final int? idBan;
+  final int? idKhachHang;
 
   const VerticalCardWidget({
     Key? key,
     required this.coffee,
-    this.onAddToCart,
+    this.idBan,
+    this.idKhachHang,
   }) : super(key: key);
+
+  ///  Định dạng giá theo kiểu Việt Nam
+  String formatCurrency(num value) {
+    final formatter = NumberFormat.currency(locale: 'vi_VN', symbol: '₫');
+    return formatter.format(value);
+  }
 
   @override
   Widget build(BuildContext context) {
+    final cartController = CartController(); // Singleton
+
     return Padding(
       padding: const EdgeInsets.only(right: 22),
       child: Container(
@@ -27,82 +40,43 @@ class VerticalCardWidget extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Color(0xff282C34),
-              Color(0xff10131A),
-            ],
+            colors: [Color(0xff282C34), Color(0xff10131A)],
           ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Ảnh + rating
-            Stack(
-              alignment: Alignment.topRight,
-              children: [
-                SizedBox(
-                  height: 145,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(15),
-                    child: Image.network(
-                      coffee.hinhanh, // lấy từ Supabase
-                      fit: BoxFit.cover,
-                      width: double.infinity,
-                      height: double.infinity,
-                      errorBuilder: (context, error, stackTrace) => Container(
-                        color: Colors.grey.shade800,
-                        child: const Icon(
-                          Icons.broken_image,
-                          color: Colors.white54,
-                          size: 30,
-                        ),
-                      ),
-                    ),
+            // Ảnh món
+            SizedBox(
+              height: 145,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(15),
+                child: Image.network(
+                  coffee.hinhanh,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  height: double.infinity,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    color: Colors.grey.shade800,
+                    child: const Icon(Icons.broken_image,
+                        color: Colors.white54, size: 30),
                   ),
                 ),
-                // Rating blur box
-                ClipRRect(
-                  borderRadius: const BorderRadius.only(
-                    topRight: Radius.circular(15),
-                    bottomLeft: Radius.circular(15),
-                  ),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-                    child: Container(
-                      alignment: Alignment.center,
-                      width: 50,
-                      height: 25,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.08),
-                      ),
-                      // child: Row(
-                      //   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      //   children: [
-                      //     const Icon(
-                      //       Icons.star,
-                      //       color: Apptheme.reviewIconColor,
-                      //       size: 15,
-                      //     ),
-                      //     Text(
-                      //       coffee..toStringAsFixed(1),
-                      //       style: Apptheme.reviewRatting,
-                      //     ),
-                      //   ],
-                      // ),
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
             const SizedBox(height: 14),
 
-            // Tên cà phê (dẫn tới trang chi tiết)
+            // Tên món
             GestureDetector(
               onTap: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => DetailScreen(coffee: coffee),
+                    builder: (context) => DetailScreen(
+                      coffee: coffee,
+                      idBan: idBan,
+                      idKhachHang: idKhachHang,
+                    ),
                   ),
                 );
               },
@@ -115,9 +89,9 @@ class VerticalCardWidget extends StatelessWidget {
             ),
             const SizedBox(height: 3),
 
-            // Subtitle (có thể thay bằng coffee.description nếu có)
+            // Mô tả
             Text(
-              coffee.mota?.isNotEmpty == true ? coffee.mota! : "With Oat Milk",
+              coffee.mota?.isNotEmpty == true ? coffee.mota! : "Ngon lắm nhé!",
               style: Apptheme.cardSubtitleSmall,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -127,27 +101,49 @@ class VerticalCardWidget extends StatelessWidget {
             // Giá + nút thêm
             Row(
               children: [
-                Row(
-                  children: [
-                    Text('\$', style: Apptheme.priceCurrencySmall),
-                    const SizedBox(width: 3),
-                    Text(
-                      coffee.gia.toString(),
-                      style: Apptheme.priceValueSmall,
-                    ),
-                  ],
+                //  Giá VNĐ
+                Text(
+                  formatCurrency(coffee.gia),
+                  style: const TextStyle(
+                    color: Colors.orangeAccent,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14.5,
+                  ),
                 ),
                 const Spacer(),
+
+                // Nút thêm vào giỏ
                 CustomFilledButton(
-                  onTap: onAddToCart ?? () {},
+                  onTap: () {
+                    final item = CartItem(
+                      mon: coffee,
+                      soLuong: 1,
+                      giaBan: coffee.gia,
+                      tuyChon: {
+                        'size': 'M',
+                        'topping': [],
+                        'ghichu': '',
+                        'idBan': idBan,
+                        'idKhachHang': idKhachHang,
+                      },
+                    );
+                    cartController.addToCart(item);
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Đã thêm ${coffee.tenmon} vào giỏ hàng',
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                        backgroundColor: Colors.brown.shade700,
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                  },
                   height: 31,
                   width: 34,
                   color: Apptheme.buttonBackground1Color,
-                  child: const Icon(
-                    Icons.add,
-                    color: Colors.white,
-                    size: 18,
-                  ),
+                  child: const Icon(Icons.add, color: Colors.white, size: 18),
                 ),
               ],
             ),

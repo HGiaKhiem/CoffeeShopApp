@@ -99,4 +99,13 @@ class AuthController {
       return e.toString();
     }
   }
+
+
+    static Future<void> signOutAnonymous() async {
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      print('Lỗi khi signOut: $e');
+    }
+  }
 }

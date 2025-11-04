@@ -1,18 +1,27 @@
 import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/svg.dart';
+import 'package:provider/provider.dart';
+
 import 'package:flutter_coffee_shop_app/entities/entities_library.dart';
 import 'package:flutter_coffee_shop_app/ui/screens/home_screen.dart';
 import 'package:flutter_coffee_shop_app/ui/theme/app_theme.dart';
 import 'package:flutter_coffee_shop_app/ui/widgets/widgets.dart';
-import 'package:flutter_svg/svg.dart';
 import 'package:flutter_coffee_shop_app/controllers/home_controller.dart';
+import 'package:flutter_coffee_shop_app/controllers/cart_controller.dart';
+import 'package:flutter_coffee_shop_app/entities/cart_item.dart';
 
 class DetailScreen extends StatefulWidget {
   final Coffee coffee;
+  final int? idBan;
+  final int? idKhachHang;
+
   const DetailScreen({
     Key? key,
     required this.coffee,
+    this.idBan,
+    this.idKhachHang,
   }) : super(key: key);
 
   @override
@@ -45,6 +54,33 @@ class _DetailScreenState extends State<DetailScreen> {
     });
   }
 
+  /// 🟢 Thêm vào giỏ hàng
+  void _addToCart() {
+    final cart = Provider.of<CartController>(context, listen: false);
+
+    final item = CartItem(
+      mon: widget.coffee,
+      soLuong: 1,
+      giaBan: _totalPrice,
+      tuyChon: {
+        'size': _selectedSize?.tensize ?? 'Mặc định',
+        'idBan': widget.idBan,
+        'idKhachHang': widget.idKhachHang,
+      },
+    );
+
+    cart.addToCart(item);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '☕ Đã thêm ${widget.coffee.tenmon} vào giỏ hàng!',
+          style: const TextStyle(color: Colors.white),
+        ),
+        backgroundColor: Colors.brown.shade700,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -65,7 +101,8 @@ class _DetailScreenState extends State<DetailScreen> {
               Text('Description', style: Apptheme.descriptionTitle),
               const SizedBox(height: 15),
               DescriptionView(
-                  description: widget.coffee.mota ?? 'Không có mô tả'),
+                description: widget.coffee.mota ?? 'Không có mô tả',
+              ),
               const SizedBox(height: 30),
 
               // 🟤 Section -> Size chọn
@@ -92,7 +129,7 @@ class _DetailScreenState extends State<DetailScreen> {
                                   ? Apptheme.accentColor
                                   : Apptheme.buttonBorderColor,
                               child: Text(
-                                '${size.tensize}',
+                                size.tensize,
                                 style: isSelected
                                     ? Apptheme.buttonActiveTextStyle
                                     : Apptheme.buttonInactiveTextStyle,
@@ -104,7 +141,7 @@ class _DetailScreenState extends State<DetailScreen> {
                     ),
               const SizedBox(height: 30),
 
-              // 🟤 Section -> Price & Buy button
+              // 🟤 Section -> Price & Add-to-cart
               SizedBox(
                 height: 56,
                 child: Row(
@@ -131,12 +168,13 @@ class _DetailScreenState extends State<DetailScreen> {
                       ],
                     ),
                     CustomFilledButton(
-                      onTap: () {},
+                      onTap: _addToCart,
                       width: 188,
                       height: 56,
                       borderRadius: 16,
                       color: Apptheme.buttonBackground1Color,
-                      child: Text('Buy Now', style: Apptheme.buttonTextStyle),
+                      child: Text('Thêm vào giỏ hàng',
+                          style: Apptheme.buttonTextStyle),
                     ),
                   ],
                 ),
@@ -149,7 +187,10 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 }
 
-// 🧱 Các widget phụ vẫn giữ nguyên
+//
+// 🧱 Các widget phụ giữ nguyên + tối ưu nhẹ
+//
+
 class CardImageView extends StatelessWidget {
   final Coffee coffee;
   const CardImageView({Key? key, required this.coffee}) : super(key: key);
@@ -176,12 +217,10 @@ class CardImageView extends StatelessWidget {
           top: 20,
           left: 20,
           child: CustomIconButton(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const HomeScreen()),
-              );
-            },
+            onTap: () => Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const HomeScreen()),
+            ),
             width: 38,
             height: 38,
             borderRadius: 10,
@@ -207,31 +246,20 @@ class CardImageView extends StatelessWidget {
 
 class BlurCardView extends StatelessWidget {
   final Coffee coffee;
-  const BlurCardView({
-    super.key,
-    required this.coffee,
-  });
+  const BlurCardView({super.key, required this.coffee});
 
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(30),
       child: BackdropFilter(
-        filter: ImageFilter.blur(
-          sigmaX: 4,
-          sigmaY: 4,
-        ),
+        filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
         child: Container(
           alignment: Alignment.center,
           height: 152,
-          decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.6),
-          ),
+          decoration: BoxDecoration(color: Colors.black.withOpacity(0.6)),
           child: Padding(
-            padding: const EdgeInsets.symmetric(
-              vertical: 20,
-              horizontal: 20,
-            ),
+            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -240,89 +268,25 @@ class BlurCardView extends StatelessWidget {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          coffee.tenmon,
-                          style: Apptheme.cardTitleLarge,
-                        ),
-                        Text(
-                          '', // Không có ingredients, để trống
-                          style: Apptheme.cardSubtitleLarge,
-                        ),
+                        Text(coffee.tenmon, style: Apptheme.cardTitleLarge),
+                        Text('', style: Apptheme.cardSubtitleLarge),
                       ],
                     ),
                     const Spacer(),
-                    Container(
-                      width: 57,
-                      height: 57,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(15),
-                        color: Apptheme.cardChipBackgroundColor,
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.only(
-                          top: 2,
-                          bottom: 5,
-                        ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
-                            SvgPicture.asset(
-                              'assets/icons/coffe.svg',
-                              height: 25,
-                            ),
-                            Text(
-                              'Coffee',
-                              style: Apptheme.cardChipTextStyle,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+                    _buildChip('assets/icons/coffe.svg', 'Coffee'),
                     const SizedBox(width: 10),
-                    Container(
-                      width: 57,
-                      height: 57,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(15),
-                        color: Apptheme.cardChipBackgroundColor,
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.only(
-                          top: 2,
-                          bottom: 5,
-                        ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
-                            SvgPicture.asset('assets/icons/milk.svg'),
-                            Text(
-                              'Milk',
-                              style: Apptheme.cardChipTextStyle,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+                    _buildChip('assets/icons/milk.svg', 'Milk'),
                   ],
                 ),
                 const Spacer(),
                 Row(
                   children: [
-                    const Icon(
-                      Icons.star,
-                      color: Apptheme.reviewIconColor,
-                      size: 20,
-                    ),
+                    const Icon(Icons.star,
+                        color: Apptheme.reviewIconColor, size: 20),
                     const SizedBox(width: 3),
-                    Text(
-                      '0.0', // Không có rating
-                      style: Apptheme.cardTitleSmall,
-                    ),
+                    Text('0.0', style: Apptheme.cardTitleSmall),
                     const SizedBox(width: 3),
-                    Text(
-                      '(0)', // Không có reviews
-                      style: Apptheme.cardSubtitleSmall,
-                    ),
+                    Text('(0)', style: Apptheme.cardSubtitleSmall),
                     const Spacer(),
                     Container(
                       width: 103,
@@ -331,23 +295,12 @@ class BlurCardView extends StatelessWidget {
                         borderRadius: BorderRadius.circular(9),
                         color: Apptheme.cardChipBackgroundColor,
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.only(
-                          top: 2,
-                          bottom: 5,
-                        ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
-                            Text(
-                              'Medium Roasted',
-                              style: Apptheme.cardChipTextStyle,
-                            ),
-                          ],
-                        ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        'Medium Roasted',
+                        style: Apptheme.cardChipTextStyle,
                       ),
                     ),
-                    const SizedBox(width: 10),
                   ],
                 ),
               ],
@@ -357,81 +310,43 @@ class BlurCardView extends StatelessWidget {
       ),
     );
   }
-}
 
-class SizeChoiseView extends StatelessWidget {
-  const SizeChoiseView({
-    super.key,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        CustomFilledButton(
-          onTap: () {},
-          width: 91,
-          height: 36,
-          color: Apptheme.buttonBackground2Color,
-          borderColor: Apptheme.buttonBorderColor,
-          child: Text(
-            'S',
-            style: Apptheme.buttonActiveTextStyle,
-          ),
-        ),
-        CustomFilledButton(
-          onTap: () {},
-          width: 91,
-          height: 36,
-          color: Apptheme.buttonBackground2Color,
-          child: Text(
-            'M',
-            style: Apptheme.buttonInactiveTextStyle,
-          ),
-        ),
-        CustomFilledButton(
-          onTap: () {},
-          width: 91,
-          height: 36,
-          color: Apptheme.buttonBackground2Color,
-          child: Text(
-            'L',
-            style: Apptheme.buttonInactiveTextStyle,
-          ),
-        ),
-      ],
+  Widget _buildChip(String icon, String label) {
+    return Container(
+      width: 57,
+      height: 57,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(15),
+        color: Apptheme.cardChipBackgroundColor,
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SvgPicture.asset(icon, height: 25),
+          Text(label, style: Apptheme.cardChipTextStyle),
+        ],
+      ),
     );
   }
 }
 
 class DescriptionView extends StatelessWidget {
   final String description;
-  const DescriptionView({
-    super.key,
-    required this.description,
-  });
+  const DescriptionView({super.key, required this.description});
 
   @override
   Widget build(BuildContext context) {
+    final showMore = description.length > 120;
+    final shortText = description.substring(0, showMore ? 120 : description.length);
     return RichText(
       text: TextSpan(
         children: [
-          TextSpan(
-            text: description.substring(
-                0, description.length > 120 ? 120 : description.length),
-            style: Apptheme.descriptionContent,
-          ),
-          if (description.length > 120) ...[
+          TextSpan(text: shortText, style: Apptheme.descriptionContent),
+          if (showMore)
             TextSpan(
-              text: ' ...',
+              text: ' ... Read More',
               style: Apptheme.descriptionReadMore,
             ),
-            TextSpan(
-              text: ' Read More',
-              style: Apptheme.descriptionReadMore,
-            ),
-          ],
         ],
       ),
     );

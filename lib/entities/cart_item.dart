@@ -1,26 +1,40 @@
 import 'package:flutter_coffee_shop_app/entities/coffee.dart';
-import 'package:flutter_coffee_shop_app/entities/size.dart';
-import 'package:flutter_coffee_shop_app/entities/topping.dart';
 
-///  CartItem – một món trong giỏ hàng
+/// Model tạm đại diện cho 1 món trong giỏ hàng (chưa lưu DB)
 class CartItem {
-  final Coffee coffee;
-  final Size? size;
-  //final List<ToppingModel> toppings; // Danh sách topping
-  int quantity; // Số lượng
+  final Coffee mon; // Món được chọn
+  int soLuong;
+  double giaBan; // Giá bán sau khi cộng topping + size
+  Map<String, dynamic> tuyChon; // size, topping, ghi chú,...
 
   CartItem({
-    required this.coffee,
-    this.size,
-    //  this.toppings = const [],
-    this.quantity = 1,
+    required this.mon,
+    required this.soLuong,
+    required this.giaBan,
+    required this.tuyChon,
   });
 
-  /// topping
-  // double get toppingTotal =>
-  //     toppings.fold(0, (sum, t) => sum + t.giatang);
+  /// Tổng tiền của món này
+  double get thanhTien => giaBan * soLuong;
 
-  /// cộng size + topping
-  // double get unitPrice =>
-  //     coffee.gia + (size?.giatang ?? 0) + toppingTotal;
+  /// Chuyển sang JSON (dùng khi insert DB)
+  Map<String, dynamic> toJson(int idDonHang) {
+    return {
+      'id_donhang': idDonHang,
+      'id_mon': mon.id_mon, // ✅ sửa lại cho khớp Coffee
+      'soluong': soLuong,
+      'giaban': giaBan,
+      'tuychon_json': tuyChon,
+    };
+  }
+
+  /// Tạo từ JSON (nếu cần hiển thị lại)
+  factory CartItem.fromJson(Map<String, dynamic> json) {
+    return CartItem(
+      mon: Coffee.fromJson(json['mon']),
+      soLuong: json['soluong'],
+      giaBan: (json['giaban'] as num).toDouble(),
+      tuyChon: json['tuychon_json'] ?? {},
+    );
+  }
 }
