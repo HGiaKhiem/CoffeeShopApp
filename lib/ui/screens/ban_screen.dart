@@ -18,13 +18,34 @@ class _BanScreenState extends State<BanScreen> {
   final _supabase = Supabase.instance.client;
   Map<String, dynamic>? _ban;
   bool _loading = true;
+  bool _hasCustomer = false;
+  int? _idKhach; // Nếu user đã login
 
   @override
   void initState() {
     super.initState();
-    _fetchBan();
+    _checkCurrentUser();
   }
 
+  Future<void> _checkCurrentUser() async {
+    final user = _supabase.auth.currentUser;
+    if (user != null) {
+      // ✅ Lấy id_khach từ bảng khachhang theo email đăng nhập
+      final res = await _supabase
+          .from('khachhang')
+          .select('id_khachhang')
+          .eq('email', user.email ?? '')
+          .maybeSingle();
+
+      setState(() {
+        _hasCustomer = true;
+        _idKhach = res?['id_khachhang'];
+      });
+    }
+    await _fetchBan();
+  }
+
+  /// ✅ Lấy thông tin bàn từ Supabase
   Future<void> _fetchBan() async {
     try {
       final res = await _supabase
@@ -45,21 +66,38 @@ class _BanScreenState extends State<BanScreen> {
     }
   }
 
+  /// ✅ Khi khách vào menu quán
   Future<void> _vaoMenuQuan() async {
     if (_ban == null) return;
+
     final prefs = await SharedPreferences.getInstance();
-
-    const int idKhachHang = 4;
     final int idBan = _ban!['id_ban'];
+    final String trangThai = _ban!['trangthai'];
 
+    // ❌ Nếu bàn có khách thì chặn lại
+    if (trangThai != 'Trống') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: Colors.redAccent,
+          content: Text('❌ Bàn này đang có khách, vui lòng chọn bàn khác.'),
+        ),
+      );
+      return;
+    }
+
+    // ✅ Nếu chưa login thì set idKhach = 4 (Khachdattaiban)
+    final int idKhach = _idKhach ?? 4;
+
+    // ✅ Cập nhật trạng thái bàn
     await _supabase
         .from('ban')
-        .update({'trangthai': 'Có khách'})
-        .eq('id_ban', idBan);
+        .update({'trangthai': 'Có khách'}).eq('id_ban', idBan);
 
+    // ✅ Lưu id bàn + khách vào bộ nhớ cục bộ
     await prefs.setInt('id_ban', idBan);
-    await prefs.setInt('id_khachhang', idKhachHang);
+    await prefs.setInt('id_khachhang', idKhach);
 
+    // Đảm bảo session được clear nếu là khách không đăng nhập
     await AuthController.signOut();
 
     if (!mounted) return;
@@ -69,6 +107,7 @@ class _BanScreenState extends State<BanScreen> {
     );
   }
 
+  /// ✅ Nếu khách muốn đăng nhập tài khoản riêng
   Future<void> _chuyenLogin() async {
     if (_ban == null) return;
     final prefs = await SharedPreferences.getInstance();
@@ -109,20 +148,19 @@ class _BanScreenState extends State<BanScreen> {
                       ),
                     ),
 
-                    // Blur overlay nhẹ cho chiều sâu
+                    // Blur overlay nhẹ
                     BackdropFilter(
                       filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
                       child: Container(color: Colors.black.withOpacity(0.2)),
                     ),
 
-                    // Nội dung chính
+                    // Nội dung
                     SafeArea(
                       child: Padding(
                         padding: const EdgeInsets.all(26),
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-
                             Container(
                               height: 100,
                               width: 100,
@@ -130,7 +168,9 @@ class _BanScreenState extends State<BanScreen> {
                                 color: Colors.brown.shade100.withOpacity(0.2),
                                 shape: BoxShape.circle,
                                 border: Border.all(
-                                    color: Colors.brown.shade400, width: 2),
+                                  color: Colors.brown.shade400,
+                                  width: 2,
+                                ),
                               ),
                               child: const Icon(
                                 Icons.local_cafe_rounded,
@@ -140,7 +180,7 @@ class _BanScreenState extends State<BanScreen> {
                             ),
                             const SizedBox(height: 30),
 
-                            //  Thông tin bàn
+                            // Thông tin bàn
                             Text(
                               'Bàn số ${_ban!['soban']}',
                               style: const TextStyle(
@@ -160,23 +200,27 @@ class _BanScreenState extends State<BanScreen> {
                             ),
                             const SizedBox(height: 40),
 
-                            //  Nút “Vào menu quán”
+                            // Nút hành động
                             SizedBox(
                               width: double.infinity,
                               child: ElevatedButton.icon(
                                 onPressed: _vaoMenuQuan,
                                 icon: const Icon(Icons.restaurant_menu,
                                     color: Colors.white),
-                                label: const Text(
-                                  'Vào menu quán',
-                                  style: TextStyle(
+                                label: Text(
+                                  _ban!['trangthai'] == 'Trống'
+                                      ? 'Vào menu quán'
+                                      : 'Bàn đang có khách',
+                                  style: const TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.w600,
                                     color: Colors.white,
                                   ),
                                 ),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.brown.shade600,
+                                  backgroundColor: _ban!['trangthai'] == 'Trống'
+                                      ? Colors.brown.shade600
+                                      : Colors.grey.shade700,
                                   padding: const EdgeInsets.symmetric(
                                       vertical: 15, horizontal: 20),
                                   shape: RoundedRectangleBorder(
@@ -200,8 +244,7 @@ class _BanScreenState extends State<BanScreen> {
                                     color: Colors.white70, fontSize: 16),
                               ),
                               style: OutlinedButton.styleFrom(
-                                side:
-                                    BorderSide(color: Colors.brown.shade300),
+                                side: BorderSide(color: Colors.brown.shade300),
                                 padding: const EdgeInsets.symmetric(
                                     vertical: 14, horizontal: 25),
                                 shape: RoundedRectangleBorder(
@@ -209,11 +252,10 @@ class _BanScreenState extends State<BanScreen> {
                                 ),
                               ),
                             ),
-
                             const SizedBox(height: 40),
 
                             Text(
-                              ' Quét mã QR trên bàn để gọi món.\nSau khi thanh toán, bàn sẽ được làm mới.',
+                              'Quét mã QR trên bàn để gọi món.\nSau khi thanh toán, bàn sẽ được làm mới.',
                               style: TextStyle(
                                 color: Colors.white.withOpacity(0.7),
                                 fontSize: 14,

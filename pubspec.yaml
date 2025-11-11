@@ -17,7 +17,7 @@ dependencies:
   google_fonts: ^4.0.4
   smooth_page_indicator: ^1.1.0
   stylish_bottom_bar: ^1.0.1
-  supabase_flutter: ^2.10.1
+  supabase_flutter: ^2.10.3
   barcode_widget: ^2.0.1
   google_mlkit_barcode_scanning: ^0.3.0
   mobile_scanner: ^7.1.2

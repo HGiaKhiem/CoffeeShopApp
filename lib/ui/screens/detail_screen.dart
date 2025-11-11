@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 
 import 'package:flutter_coffee_shop_app/entities/entities_library.dart';
 import 'package:flutter_coffee_shop_app/ui/screens/home_screen.dart';
@@ -32,12 +33,14 @@ class _DetailScreenState extends State<DetailScreen> {
   List<Size> _sizes = [];
   Size? _selectedSize;
   double _totalPrice = 0;
+  late Future<List<Map<String, dynamic>>> _futureReviews;
 
   @override
   void initState() {
     super.initState();
     _loadSizes();
     _totalPrice = widget.coffee.gia;
+    _futureReviews = HomeController.getRecentReviews(widget.coffee.id_mon);
   }
 
   Future<void> _loadSizes() async {
@@ -54,9 +57,21 @@ class _DetailScreenState extends State<DetailScreen> {
     });
   }
 
+  String formatMoney(double value) {
+    final formatCurrency = NumberFormat.currency(
+      locale: 'vi_VN',
+      symbol: '₫',
+      decimalDigits: 0,
+    );
+    return formatCurrency.format(value);
+  }
+
   /// 🟢 Thêm vào giỏ hàng
   void _addToCart() {
     final cart = Provider.of<CartController>(context, listen: false);
+
+    final int idBan = widget.idBan ?? 1;
+    final int idKhach = widget.idKhachHang ?? 4;
 
     final item = CartItem(
       mon: widget.coffee,
@@ -64,8 +79,8 @@ class _DetailScreenState extends State<DetailScreen> {
       giaBan: _totalPrice,
       tuyChon: {
         'size': _selectedSize?.tensize ?? 'Mặc định',
-        'idBan': widget.idBan,
-        'idKhachHang': widget.idKhachHang,
+        'idBan': idBan,
+        'idKhachHang': idKhach,
       },
     );
 
@@ -86,28 +101,26 @@ class _DetailScreenState extends State<DetailScreen> {
     return Scaffold(
       backgroundColor: Apptheme.backgroundColor,
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(26),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Section -> Card Image
-              Expanded(
-                child: CardImageView(coffee: widget.coffee),
-              ),
-              const SizedBox(height: 30),
+              // Ảnh
+              CardImageView(coffee: widget.coffee),
+              const SizedBox(height: 25),
 
-              // Section -> Description
-              Text('Description', style: Apptheme.descriptionTitle),
-              const SizedBox(height: 15),
+              // Mô tả
+              Text('Mô tả', style: Apptheme.descriptionTitle),
+              const SizedBox(height: 10),
               DescriptionView(
                 description: widget.coffee.mota ?? 'Không có mô tả',
               ),
-              const SizedBox(height: 30),
+              const SizedBox(height: 25),
 
-              // 🟤 Section -> Size chọn
-              Text('Select Size', style: Apptheme.subtileLarge),
-              const SizedBox(height: 15),
+              // Size + Giá
+              Text('Chọn size', style: Apptheme.subtileLarge),
+              const SizedBox(height: 10),
               _sizes.isEmpty
                   ? const Center(child: CircularProgressIndicator())
                   : Row(
@@ -139,45 +152,147 @@ class _DetailScreenState extends State<DetailScreen> {
                         );
                       }).toList(),
                     ),
-              const SizedBox(height: 30),
 
-              // 🟤 Section -> Price & Add-to-cart
-              SizedBox(
-                height: 56,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      children: [
-                        Text('Price', style: Apptheme.priceTitleLarge),
-                        const Spacer(),
-                        RichText(
-                          text: TextSpan(
-                            children: [
-                              TextSpan(
-                                text: '\$ ',
-                                style: Apptheme.priceCurrencyLarge,
-                              ),
-                              TextSpan(
-                                text: _totalPrice.toStringAsFixed(2),
-                                style: Apptheme.priceValueLarge,
-                              ),
-                            ],
-                          ),
+              const SizedBox(height: 25),
+
+              // Giá + Thêm vào giỏ
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Giá',
+                          style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500)),
+                      const SizedBox(height: 4),
+                      Text(
+                        formatMoney(_totalPrice),
+                        style: const TextStyle(
+                          color: Colors.amber,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 22,
                         ),
-                      ],
-                    ),
-                    CustomFilledButton(
-                      onTap: _addToCart,
-                      width: 188,
-                      height: 56,
-                      borderRadius: 16,
-                      color: Apptheme.buttonBackground1Color,
-                      child: Text('Thêm vào giỏ hàng',
-                          style: Apptheme.buttonTextStyle),
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
+                  CustomFilledButton(
+                    onTap: _addToCart,
+                    width: 180,
+                    height: 56,
+                    borderRadius: 16,
+                    color: Apptheme.buttonBackground1Color,
+                    child: Text('Thêm vào giỏ hàng',
+                        style: Apptheme.buttonTextStyle),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 35),
+
+              // 🔸 Đánh giá gần đây (load 1 lần duy nhất)
+              const Text(
+                'Đánh giá gần đây',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
                 ),
+              ),
+              const SizedBox(height: 10),
+              FutureBuilder<List<Map<String, dynamic>>>(
+                future: _futureReviews,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(8.0),
+                        child: CircularProgressIndicator(color: Colors.brown),
+                      ),
+                    );
+                  }
+
+                  if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: Text(
+                        '☕ Chưa có đánh giá nào cho món này',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                    );
+                  }
+
+                  final reviews = snapshot.data!;
+                  return Column(
+                    children: reviews.map((r) {
+                      final user = r['khachhang'];
+                      final sosao = r['sosao'] ?? 0;
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(25),
+                              child: Image.network(
+                                user?['AvatarURL'] ??
+                                    'https://rubeafovywlrgxblfmlr.supabase.co/storage/v1/object/public/avatar/avatar.png',
+                                width: 40,
+                                height: 40,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    user?['tenkh'] ?? 'Khách ẩn danh',
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600),
+                                  ),
+                                  Row(
+                                    children: List.generate(5, (i) {
+                                      return Icon(
+                                        i < sosao
+                                            ? Icons.star
+                                            : Icons.star_border,
+                                        color: Colors.amber,
+                                        size: 16,
+                                      );
+                                    }),
+                                  ),
+                                  if ((r['nhanxet'] ?? '').isNotEmpty)
+                                    Text(
+                                      r['nhanxet'],
+                                      style: const TextStyle(
+                                          color: Colors.white70, fontSize: 13),
+                                    ),
+                                  Text(
+                                    (r['ngaydanhgia'] ?? '')
+                                        .toString()
+                                        .substring(0, 10),
+                                    style: const TextStyle(
+                                        color: Colors.white54, fontSize: 11),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  );
+                },
               ),
             ],
           ),
@@ -188,7 +303,7 @@ class _DetailScreenState extends State<DetailScreen> {
 }
 
 //
-// 🧱 Các widget phụ giữ nguyên + tối ưu nhẹ
+// 🧱 Widget phụ
 //
 
 class CardImageView extends StatelessWidget {
@@ -202,130 +317,25 @@ class CardImageView extends StatelessWidget {
       children: [
         ClipRRect(
           borderRadius: BorderRadius.circular(30),
-          child: SizedBox(
+          child: Image.network(
+            coffee.hinhanh ?? 'https://i.imgur.com/NoImage.png',
             width: double.infinity,
-            height: double.infinity,
-            child: Image.network(
-              coffee.hinhanh ?? 'https://i.imgur.com/NoImage.png',
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) =>
-                  const Icon(Icons.error),
-            ),
+            height: 260,
+            fit: BoxFit.cover,
           ),
         ),
         Positioned(
           top: 20,
           left: 20,
           child: CustomIconButton(
-            onTap: () => Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (_) => const HomeScreen()),
-            ),
+            onTap: () => Navigator.pop(context),
             width: 38,
             height: 38,
             borderRadius: 10,
             child: const Icon(CupertinoIcons.back, color: Apptheme.iconColor),
           ),
         ),
-        Positioned(
-          top: 20,
-          right: 20,
-          child: CustomIconButton(
-            onTap: () {},
-            width: 38,
-            height: 38,
-            borderRadius: 10,
-            child: const Icon(Icons.favorite, color: Apptheme.iconColor),
-          ),
-        ),
-        BlurCardView(coffee: coffee),
       ],
-    );
-  }
-}
-
-class BlurCardView extends StatelessWidget {
-  final Coffee coffee;
-  const BlurCardView({super.key, required this.coffee});
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(30),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-        child: Container(
-          alignment: Alignment.center,
-          height: 152,
-          decoration: BoxDecoration(color: Colors.black.withOpacity(0.6)),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(coffee.tenmon, style: Apptheme.cardTitleLarge),
-                        Text('', style: Apptheme.cardSubtitleLarge),
-                      ],
-                    ),
-                    const Spacer(),
-                    _buildChip('assets/icons/coffe.svg', 'Coffee'),
-                    const SizedBox(width: 10),
-                    _buildChip('assets/icons/milk.svg', 'Milk'),
-                  ],
-                ),
-                const Spacer(),
-                Row(
-                  children: [
-                    const Icon(Icons.star,
-                        color: Apptheme.reviewIconColor, size: 20),
-                    const SizedBox(width: 3),
-                    Text('0.0', style: Apptheme.cardTitleSmall),
-                    const SizedBox(width: 3),
-                    Text('(0)', style: Apptheme.cardSubtitleSmall),
-                    const Spacer(),
-                    Container(
-                      width: 103,
-                      height: 31,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(9),
-                        color: Apptheme.cardChipBackgroundColor,
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        'Medium Roasted',
-                        style: Apptheme.cardChipTextStyle,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildChip(String icon, String label) {
-    return Container(
-      width: 57,
-      height: 57,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(15),
-        color: Apptheme.cardChipBackgroundColor,
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          SvgPicture.asset(icon, height: 25),
-          Text(label, style: Apptheme.cardChipTextStyle),
-        ],
-      ),
     );
   }
 }
@@ -337,14 +347,17 @@ class DescriptionView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final showMore = description.length > 120;
-    final shortText = description.substring(0, showMore ? 120 : description.length);
+    final shortText = description.substring(
+      0,
+      showMore ? 120 : description.length,
+    );
     return RichText(
       text: TextSpan(
         children: [
           TextSpan(text: shortText, style: Apptheme.descriptionContent),
           if (showMore)
             TextSpan(
-              text: ' ... Read More',
+              text: ' ... Xem thêm',
               style: Apptheme.descriptionReadMore,
             ),
         ],

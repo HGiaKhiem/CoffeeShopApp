@@ -3,10 +3,11 @@ import 'package:flutter_coffee_shop_app/controllers/home_controller.dart';
 import 'package:flutter_coffee_shop_app/entities/entities_library.dart';
 import 'package:flutter_coffee_shop_app/ui/screens/introduction_screen.dart';
 import 'package:flutter_coffee_shop_app/ui/screens/qr_scan_screen.dart';
+import 'package:flutter_coffee_shop_app/ui/widgets/widgets.dart';
 import 'package:flutter_coffee_shop_app/ui/theme/app_theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../widgets/widgets.dart';
-import 'package:flutter_coffee_shop_app/ui/screens/screens.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_coffee_shop_app/ui/screens/profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -16,6 +17,8 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final _supabase = Supabase.instance.client;
+
   List<Coffee> _allCoffees = [];
   List<LoaiMon> _loaiMons = [];
   List<Coffee> _displayedCoffees = [];
@@ -26,19 +29,80 @@ class _HomeScreenState extends State<HomeScreen> {
 
   int? _idBan;
   int? _idKhach;
+  String? _tenKhach;
+  String? _avatarUrl;
 
   @override
   void initState() {
     super.initState();
-    _loadInitData();
+
+    final session = _supabase.auth.currentSession;
+    if (session != null) {
+      _loadInitData();
+    }
+
+    _supabase.auth.onAuthStateChange.listen((data) {
+      final event = data.event;
+      final session = data.session;
+
+      if (event == AuthChangeEvent.signedIn && session != null) {
+        debugPrint('✅ Supabase user đã đăng nhập, reload Home');
+        _loadInitData();
+      } else if (event == AuthChangeEvent.signedOut) {
+        debugPrint('🚪 Supabase user đã đăng xuất, reset về khách vãng lai');
+        setState(() {
+          _idKhach = null;
+          _tenKhach = 'Khách tại bàn ${_idBan ?? 1}';
+          _avatarUrl =
+              'https://rubeafovywlrgxblfmlr.supabase.co/storage/v1/object/public/avatar/avatar.png';
+        });
+      }
+    });
   }
 
   /// ✅ Load dữ liệu: bàn + khách + danh sách món
   Future<void> _loadInitData() async {
     final prefs = await SharedPreferences.getInstance();
     _idBan = prefs.getInt('id_ban');
-    _idKhach = prefs.getInt('id_khachhang');
 
+    // 🟢 Nếu user đã đăng nhập Supabase
+    final currentUser = _supabase.auth.currentUser;
+
+    if (currentUser != null) {
+      try {
+        final khach = await _supabase
+            .from('khachhang')
+            .select('id_khachhang, tenkh, avatarurl')
+            .eq('UID', currentUser.id)
+            .maybeSingle();
+
+        if (khach != null) {
+          _idKhach = khach['id_khachhang'] as int?;
+          _tenKhach = khach['tenkh'] ?? 'Khách hàng';
+          _avatarUrl = khach['avatarurl'] ??
+              'https://rubeafovywlrgxblfmlr.supabase.co/storage/v1/object/public/avatar/avatar.png';
+
+          await prefs.setInt('id_khachhang', _idKhach!);
+        } else {
+          _tenKhach = 'Khách tại bàn $_idBan';
+          _avatarUrl =
+              'https://rubeafovywlrgxblfmlr.supabase.co/storage/v1/object/public/avatar/avatar.png';
+        }
+      } catch (e) {
+        debugPrint('❌ Lỗi khi tải thông tin khách: $e');
+        _tenKhach = 'Khách tại bàn $_idBan';
+        _avatarUrl =
+            'https://rubeafovywlrgxblfmlr.supabase.co/storage/v1/object/public/avatar/avatar.png';
+      }
+    } else {
+      // 🟠 Nếu chưa đăng nhập (khách vãng lai)
+      _idKhach = prefs.getInt('id_khachhang');
+      _tenKhach = 'Khách tại bàn $_idBan';
+      _avatarUrl =
+          'https://rubeafovywlrgxblfmlr.supabase.co/storage/v1/object/public/avatar/avatar.png';
+    }
+
+    // 🧾 Load danh sách món và loại món
     final coffees = await HomeController.getAllCoffees();
     final loaiMons = await HomeController.getAllLoaiMon();
 
@@ -48,12 +112,15 @@ class _HomeScreenState extends State<HomeScreen> {
       _displayedCoffees = coffees;
       _isLoading = false;
     });
+
+    debugPrint('👤 Đã load: $_tenKhach');
   }
 
   void _applyFilters() {
     List<Coffee> filtered = _allCoffees;
     if (_selectedCategoryId != null) {
-      filtered = HomeController.filterByCategory(filtered, _selectedCategoryId!);
+      filtered =
+          HomeController.filterByCategory(filtered, _selectedCategoryId!);
     }
     if (_searchQuery.isNotEmpty) {
       filtered = HomeController.searchCoffees(filtered, _searchQuery);
@@ -89,12 +156,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 slivers: [
                   // 🧱 AppBar
                   SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 20),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 22, vertical: 20),
                     sliver: SliverToBoxAdapter(
-                      child: HomeCustomAppBar(
-                        idBan: _idBan,
-                        idKhach: _idKhach,
-                      ),
+                      child: _buildAppBar(),
                     ),
                   ),
 
@@ -123,7 +188,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
                   // ☕️ Loại món
                   SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 20),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 22, vertical: 20),
                     sliver: SliverToBoxAdapter(
                       child: SizedBox(
                         height: 48,
@@ -132,12 +198,14 @@ class _HomeScreenState extends State<HomeScreen> {
                           itemCount: _loaiMons.length,
                           itemBuilder: (context, index) {
                             final loai = _loaiMons[index];
-                            final isActive = _selectedCategoryId == loai.id_loaimon;
+                            final isActive =
+                                _selectedCategoryId == loai.id_loaimon;
                             return Padding(
                               padding: const EdgeInsets.only(right: 15),
                               child: ChoiceChip(
                                 label: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 2),
                                   child: Text(
                                     loai.tenloaimon,
                                     style: isActive
@@ -146,8 +214,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                 ),
                                 selected: isActive,
-                                selectedColor: Apptheme.accentColor.withOpacity(0.25),
-                                backgroundColor: Apptheme.cardChipBackgroundColor,
+                                selectedColor:
+                                    Apptheme.accentColor.withOpacity(0.25),
+                                backgroundColor:
+                                    Apptheme.cardChipBackgroundColor,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(22),
                                   side: BorderSide(
@@ -156,7 +226,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                         : Apptheme.gray3Color,
                                   ),
                                 ),
-                                onSelected: (_) => _onCategorySelected(loai.id_loaimon),
+                                onSelected: (_) =>
+                                    _onCategorySelected(loai.id_loaimon),
                               ),
                             );
                           },
@@ -199,7 +270,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
                   // 🧾 Special for You
                   SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 20),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 22, vertical: 20),
                     sliver: SliverToBoxAdapter(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -224,7 +296,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                   itemBuilder: (context, index) {
                                     final coffee = _displayedCoffees[index];
                                     return Padding(
-                                      padding: const EdgeInsets.only(bottom: 15),
+                                      padding:
+                                          const EdgeInsets.only(bottom: 15),
                                       child: HorizontalCardWidget(
                                         coffee: coffee,
                                         idBan: _idBan,
@@ -241,7 +314,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
       ),
 
-      // QR Scan FAB
+      // Nút quét QR
       floatingActionButton: Transform.translate(
         offset: const Offset(0, 8),
         child: FloatingActionButton(
@@ -261,97 +334,82 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-      bottomNavigationBar: CustomNavBar(
-        idBan: _idBan ?? 1,
-        idKhach: _idKhach ?? 1,
-      ),
+
+      bottomNavigationBar: CustomNavBar(idBan: _idBan ?? 1),
     );
   }
-}
 
-/// 🧭 Custom AppBar hiển thị thông tin khách + bàn
-class HomeCustomAppBar extends StatelessWidget {
-  final int? idBan;
-  final int? idKhach;
+  /// 🧭 Custom AppBar hiển thị thông tin khách + bàn
+  Widget _buildAppBar() {
+    final user = _supabase.auth.currentUser; // 👈 Lấy user hiện tại
+    final email = user?.email;
+    final uid = user?.id;
 
-  const HomeCustomAppBar({super.key, this.idBan, this.idKhach});
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<KhachHang?>(
-      future: HomeController.getCurrentCustomer(),
-      builder: (context, snapshot) {
-        final customer = snapshot.data;
-        final imageUrl = customer?.avatarURL ??
-            'https://rubeafovywlrgxblfmlr.supabase.co/storage/v1/object/public/avatar/avatar.png';
-        final tenKhach = customer?.tenkh ??
-            (idKhach != null ? 'Khách tại bàn $idBan' : 'Khách hàng');
-
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            // Nút menu
-            CustomIconButton(
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const IntroductionScreen(),
-                  ),
-                );
-              },
-              width: 50,
-              height: 50,
-              child: const Icon(
-                Icons.menu,
-                color: Apptheme.iconColor,
-                size: 28,
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        CustomIconButton(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const IntroductionScreen(),
               ),
-            ),
+            );
+          },
+          width: 50,
+          height: 50,
+          child: const Icon(
+            Icons.menu,
+            color: Apptheme.iconColor,
+            size: 28,
+          ),
+        ),
 
-            // Avatar + tên khách
-            InkWell(
-              borderRadius: BorderRadius.circular(25),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ProfileScreen(customer: customer),
-                  ),
-                );
-              },
-              child: Row(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(23),
-                    child: Image.network(
-                      imageUrl,
-                      height: 45,
-                      width: 45,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Image.network(
-                        'https://rubeafovywlrgxblfmlr.supabase.co/storage/v1/object/public/avatar/avatar.png',
-                        height: 45,
-                        width: 45,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    tenKhach,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                    ),
-                  ),
-                ],
+        // 🔹 Nếu user đăng nhập rồi → hiển thị thông tin thật
+        InkWell(
+          borderRadius: BorderRadius.circular(25),
+          onTap: () async {
+            final updated = await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ProfileScreen()),
+            );
+            if (updated == true) {
+              _loadInitData(); // refresh lại khi profile thay đổi
+            }
+          },
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(23),
+                child: Image.network(
+                  // Nếu đã đăng nhập thì ưu tiên ảnh Supabase DB
+                  user != null
+                      ? (_avatarUrl ??
+                          'https://rubeafovywlrgxblfmlr.supabase.co/storage/v1/object/public/avatar/avatar.png')
+                      : 'https://rubeafovywlrgxblfmlr.supabase.co/storage/v1/object/public/avatar/avatar.png',
+                  height: 45,
+                  width: 45,
+                  fit: BoxFit.cover,
+                ),
               ),
-            ),
-          ],
-        );
-      },
+              const SizedBox(width: 10),
+
+              // ✅ Nếu có user thì lấy tên trong DB / email, không thì “Khách tại bàn”
+              Text(
+                user != null
+                    ? (_tenKhach ?? email ?? 'Người dùng')
+                    : 'Khách tại bàn $_idBan',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

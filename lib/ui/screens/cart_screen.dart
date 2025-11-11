@@ -2,47 +2,108 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_coffee_shop_app/controllers/cart_controller.dart';
-import 'package:flutter_coffee_shop_app/entities/cart_item.dart';
 import 'package:flutter_coffee_shop_app/ui/screens/qr_scan_screen.dart';
 
 final supabase = Supabase.instance.client;
 
-class CartScreen extends StatelessWidget {
+String formatMoney(double value) {
+  return value
+      .toStringAsFixed(0)
+      .replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => '.');
+}
+
+class CartScreen extends StatefulWidget {
   final int idBan;
-  final int idKhach;
+  const CartScreen({super.key, required this.idBan});
 
-  const CartScreen({
-    super.key,
-    required this.idBan,
-    required this.idKhach,
-  });
+  @override
+  State<CartScreen> createState() => _CartScreenState();
+}
 
-  /// 🔹 Lấy hoặc tạo đơn hàng mới (CHUA_THANH_TOAN)
+class _CartScreenState extends State<CartScreen> {
+  List<Map<String, dynamic>> _availableVouchers = [];
+  int? _selectedVoucherId;
+  bool _loadingVouchers = false;
+
+  Future<int> _getIdKhachHangFromUid() async {
+    try {
+      final uid = supabase.auth.currentUser?.id;
+
+      if (uid == null) {
+        debugPrint('⚠️ Không có UID Supabase, dùng khách vãng lai (id = 4)');
+        return 4;
+      }
+
+      final khach = await supabase
+          .from('khachhang')
+          .select('id_khachhang')
+          .eq('UID', uid)
+          .maybeSingle();
+
+      if (khach == null || khach['id_khachhang'] == null) {
+        debugPrint('⚠️ Không tìm thấy khách từ UID, dùng id = 4');
+        return 4;
+      }
+
+      return (khach['id_khachhang'] as num).toInt();
+    } catch (e) {
+      debugPrint('⚠️ Lỗi khi lấy id_khachhang: $e, dùng id = 4');
+      return 4;
+    }
+  }
+
+  Future<void> _loadAvailableVouchers() async {
+    setState(() => _loadingVouchers = true);
+    try {
+      final idKhach = await _getIdKhachHangFromUid();
+      final data = await supabase
+          .from('khachhang_voucher')
+          .select('id_khv, voucher(ten_voucher, phantram_giam)')
+          .eq('id_khachhang', idKhach)
+          .eq('trangthai', 'CHUA_SU_DUNG');
+
+      final list = List<Map<String, dynamic>>.from(data);
+
+      final applied = context.read<CartController>().appliedVoucher;
+      final appliedId = (applied?['id_khv'] as num?)?.toInt();
+
+      setState(() {
+        _availableVouchers = list;
+        _selectedVoucherId = (appliedId != null &&
+                list.any((v) => (v['id_khv'] as num).toInt() == appliedId))
+            ? appliedId
+            : null;
+      });
+    } catch (e) {
+      debugPrint('Lỗi load voucher: $e');
+    } finally {
+      setState(() => _loadingVouchers = false);
+    }
+  }
+
   Future<int> _getOrCreateDonHang() async {
     final existing = await supabase
         .from('donhang')
         .select('id_donhang')
-        .eq('id_ban', idBan)
+        .eq('id_ban', widget.idBan)
         .eq('trangthai', 'CHUA_THANH_TOAN')
         .maybeSingle();
+    if (existing != null) return (existing['id_donhang'] as num).toInt();
 
-    if (existing != null) return existing['id_donhang'] as int;
-
-    final insert = await supabase
+    final idKhach = await _getIdKhachHangFromUid();
+    final inserted = await supabase
         .from('donhang')
         .insert({
-          'id_ban': idBan,
+          'id_ban': widget.idBan,
           'id_khachhang': idKhach,
           'trangthai': 'CHUA_THANH_TOAN',
           'thoigian': DateTime.now().toIso8601String(),
         })
         .select('id_donhang')
         .single();
-
-    return insert['id_donhang'] as int;
+    return (inserted['id_donhang'] as num).toInt();
   }
 
-  /// 🟤 Đặt món (insert chi tiết vào CSDL)
   Future<void> _datMon(BuildContext context, CartController cart) async {
     if (cart.items.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -54,11 +115,12 @@ class CartScreen extends StatelessWidget {
     try {
       final idDonHang = await _getOrCreateDonHang();
 
-      // Xóa chi tiết cũ nếu có
-      await supabase.from('chitietdonhang').delete().eq('id_donhang', idDonHang);
+      await supabase
+          .from('chitietdonhang')
+          .delete()
+          .eq('id_donhang', idDonHang);
 
-      // Insert món mới
-      final data = cart.items.map((i) {
+      final rows = cart.items.map((i) {
         return {
           'id_donhang': idDonHang,
           'id_mon': i.mon.id_mon,
@@ -67,7 +129,8 @@ class CartScreen extends StatelessWidget {
           'tuychon_json': i.tuyChon,
         };
       }).toList();
-      await supabase.from('chitietdonhang').insert(data);
+
+      await supabase.from('chitietdonhang').insert(rows);
 
       await supabase
           .from('donhang')
@@ -75,13 +138,10 @@ class CartScreen extends StatelessWidget {
 
       await supabase
           .from('ban')
-          .update({'trangthai': 'Có khách'}).eq('id_ban', idBan);
+          .update({'trangthai': 'Có khách'}).eq('id_ban', widget.idBan);
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('✅ Đặt món thành công!'),
-          backgroundColor: Colors.green,
-        ),
+        const SnackBar(content: Text('✅ Đặt món thành công!')),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -90,63 +150,57 @@ class CartScreen extends StatelessWidget {
     }
   }
 
-  /// 🟢 Thanh toán giả (update trạng thái)
-/// 🟢 Thanh toán giả (update trạng thái + clear giỏ)
-/// 🟢 Thanh toán giả (update trạng thái + clear giỏ)
-Future<void> _thanhToanGia(BuildContext context) async {
-  final cart = Provider.of<CartController>(context, listen: false);
+  Future<void> _thanhToanGia(BuildContext context) async {
+    final cart = Provider.of<CartController>(context, listen: false);
+    try {
+      final existing = await supabase
+          .from('donhang')
+          .select('id_donhang')
+          .eq('id_ban', widget.idBan)
+          .eq('trangthai', 'CHUA_THANH_TOAN')
+          .maybeSingle();
 
-  try {
-    final existing = await supabase
-        .from('donhang')
-        .select('id_donhang')
-        .eq('id_ban', idBan)
-        .eq('trangthai', 'CHUA_THANH_TOAN')
-        .maybeSingle();
+      if (existing == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('⚠️ Không có đơn hàng để thanh toán!')),
+        );
+        return;
+      }
 
-    if (existing == null) {
+      final idDonHang = (existing['id_donhang'] as num).toInt();
+
+      await supabase.from('donhang').update({
+        'trangthai': 'DA_THANH_TOAN',
+        'tongtien': cart.tongTienSauGiam,
+      }).eq('id_donhang', idDonHang);
+
+      if (cart.appliedVoucher != null) {
+        await supabase.from('khachhang_voucher').update({
+          'trangthai': 'DA_SU_DUNG',
+          'ngay_sudung': DateTime.now().toIso8601String(),
+        }).eq('id_khv', cart.appliedVoucher!['id_khv']);
+      }
+
+      await supabase
+          .from('ban')
+          .update({'trangthai': 'Trống'}).eq('id_ban', widget.idBan);
+
+      cart.clearCart();
+
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('⚠️ Không có đơn hàng để thanh toán!')),
+        const SnackBar(content: Text('✅ Thanh toán thành công!')),
       );
-      return;
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ Lỗi thanh toán: $e')),
+      );
     }
-
-    final idDonHang = existing['id_donhang'];
-
-    // ✅ Cập nhật trạng thái đơn & bàn
-    await supabase
-        .from('donhang')
-        .update({'trangthai': 'DA_THANH_TOAN'})
-        .eq('id_donhang', idDonHang);
-
-    await supabase
-        .from('ban')
-        .update({'trangthai': 'Trống'})
-        .eq('id_ban', idBan);
-
-    // ✅ Xóa giỏ hàng trong app
-    cart.clearCart();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('✅ Thanh toán thành công, giỏ hàng đã được làm trống!'),
-        backgroundColor: Colors.green,
-      ),
-    );
-  } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('❌ Lỗi thanh toán: $e')),
-    );
   }
-}
 
-
-  /// 🟣 Mở màn hình quét QR
-  void _openQrScan(BuildContext context) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const QrScanScreen()),
-    );
+  @override
+  void initState() {
+    super.initState();
+    _loadAvailableVouchers();
   }
 
   @override
@@ -157,30 +211,9 @@ Future<void> _thanhToanGia(BuildContext context) async {
       backgroundColor: const Color(0xFF121212),
       appBar: AppBar(
         backgroundColor: const Color(0xFF4E342E),
-        elevation: 0,
-        leading: Container(
-          margin: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Colors.brown.shade600,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
-            onPressed: () => Navigator.pop(context),
-            tooltip: 'Quay lại',
-          ),
-        ),
-        title: const Text(
-          'Giỏ hàng của bạn ☕',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w700,
-            fontSize: 18,
-          ),
-        ),
+        title: const Text('Giỏ hàng ☕'),
         centerTitle: true,
       ),
-
       body: cart.items.isEmpty
           ? const Center(
               child: Text(
@@ -190,10 +223,8 @@ Future<void> _thanhToanGia(BuildContext context) async {
             )
           : Column(
               children: [
-                // Danh sách món
                 Expanded(
                   child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
                     itemCount: cart.items.length,
                     itemBuilder: (context, index) {
                       final item = cart.items[index];
@@ -209,19 +240,14 @@ Future<void> _thanhToanGia(BuildContext context) async {
                               width: 55,
                               height: 55,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) =>
-                                  const Icon(Icons.local_cafe,
-                                      color: Colors.white70),
                             ),
                           ),
-                          title: Text(
-                            item.mon.tenmon,
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600),
-                          ),
+                          title: Text(item.mon.tenmon,
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600)),
                           subtitle: Text(
-                            'Giá: ${item.giaBan.toStringAsFixed(0)}đ\nTổng: ${(item.giaBan * item.soLuong).toStringAsFixed(0)}đ',
+                            'Giá: ${formatMoney(item.giaBan)}đ\nTổng: ${formatMoney(item.giaBan * item.soLuong)}đ',
                             style: const TextStyle(color: Colors.white70),
                           ),
                           trailing: Row(
@@ -233,11 +259,9 @@ Future<void> _thanhToanGia(BuildContext context) async {
                                 onPressed: () =>
                                     cart.updateQuantity(item, item.soLuong - 1),
                               ),
-                              Text(
-                                '${item.soLuong}',
-                                style: const TextStyle(
-                                    fontSize: 16, color: Colors.white),
-                              ),
+                              Text('${item.soLuong}',
+                                  style: const TextStyle(
+                                      color: Colors.white, fontSize: 16)),
                               IconButton(
                                 icon: const Icon(Icons.add_circle_outline,
                                     color: Colors.white70),
@@ -251,28 +275,93 @@ Future<void> _thanhToanGia(BuildContext context) async {
                     },
                   ),
                 ),
-
-                // Tổng cộng + nút hành động
                 Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 24, vertical: 22),
+                      const EdgeInsets.symmetric(horizontal: 22, vertical: 20),
                   decoration: const BoxDecoration(
                     color: Color(0xFF2B2B2B),
                     borderRadius:
                         BorderRadius.vertical(top: Radius.circular(22)),
                   ),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      if (_loadingVouchers)
+                        const CircularProgressIndicator(color: Colors.brown)
+                      else if (_availableVouchers.isNotEmpty)
+                        DropdownButtonFormField<int>(
+                          key: ValueKey(_availableVouchers.length),
+                          value: _selectedVoucherId,
+                          dropdownColor: const Color(0xFF3E3E3E),
+                          decoration: InputDecoration(
+                            labelText: 'Chọn voucher giảm giá',
+                            labelStyle: const TextStyle(color: Colors.white70),
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                          ),
+                          items: [
+                            // ✅ Tuỳ chọn đầu tiên: Không dùng voucher
+                            const DropdownMenuItem<int>(
+                              value: -1,
+                              child: Text(
+                                'Không dùng voucher',
+                                style: TextStyle(
+                                    color: Colors.white70,
+                                    fontStyle: FontStyle.italic),
+                              ),
+                            ),
+                            // ✅ Các voucher thật
+                            ..._availableVouchers.map((v) {
+                              final id = (v['id_khv'] as num).toInt();
+                              final data = v['voucher'] as Map<String, dynamic>;
+                              return DropdownMenuItem<int>(
+                                value: id,
+                                child: Text(
+                                  '${data['ten_voucher']} - ${data['phantram_giam']}%',
+                                  style: const TextStyle(color: Colors.white),
+                                ),
+                              );
+                            }),
+                          ],
+                          onChanged: (id) {
+                            setState(() => _selectedVoucherId = id);
+                            final cart = context.read<CartController>();
+
+                            if (id == null || id == -1) {
+                              cart.removeVoucher(); // 🧹 Bỏ chọn voucher
+                              return;
+                            }
+
+                            final v = _availableVouchers.firstWhere(
+                              (e) => (e['id_khv'] as num).toInt() == id,
+                            );
+                            final data = v['voucher'] as Map<String, dynamic>;
+                            cart.applyVoucher({
+                              'id_khv': id,
+                              'phantram_giam': data['phantram_giam'],
+                              'ten_voucher': data['ten_voucher'],
+                            });
+                          },
+                        ),
+                      const SizedBox(height: 10),
                       Text(
-                        'Tổng cộng: ${cart.tongTien.toStringAsFixed(0)}đ',
+                        'Tổng: ${formatMoney(cart.tongTien)}đ',
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 16),
+                      ),
+                      if (cart.appliedVoucher != null)
+                        Text(
+                          '-${cart.appliedVoucher!['phantram_giam']}% (${cart.appliedVoucher!['ten_voucher']})',
+                          style: const TextStyle(
+                              color: Colors.greenAccent, fontSize: 14),
+                        ),
+                      Text(
+                        'Thanh toán: ${formatMoney(cart.tongTienSauGiam)}đ',
                         style: const TextStyle(
                             fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white),
-                        textAlign: TextAlign.center,
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold),
                       ),
-                      const SizedBox(height: 15),
+                      const SizedBox(height: 16),
                       Row(
                         children: [
                           Expanded(
@@ -281,55 +370,37 @@ Future<void> _thanhToanGia(BuildContext context) async {
                                   await _datMon(context, cart),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.orange.shade700,
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 14),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
                               ),
-                              icon: const Icon(Icons.fastfood,
-                                  color: Colors.white),
-                              label: const Text('Đặt món',
-                                  style: TextStyle(
-                                      color: Colors.white, fontSize: 16)),
+                              icon: const Icon(Icons.fastfood),
+                              label: const Text('Đặt món'),
                             ),
                           ),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: 10),
                           Expanded(
                             child: ElevatedButton.icon(
                               onPressed: () async =>
                                   await _thanhToanGia(context),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.green.shade700,
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 14),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
                               ),
-                              icon: const Icon(Icons.check_circle_outline,
-                                  color: Colors.white),
-                              label: const Text('Thanh toán',
-                                  style: TextStyle(
-                                      color: Colors.white, fontSize: 16)),
+                              icon: const Icon(Icons.check_circle_outline),
+                              label: const Text('Thanh toán'),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 10),
                       ElevatedButton.icon(
-                        onPressed: () => _openQrScan(context),
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const QrScanScreen()),
+                        ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.brown.shade600,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
                         ),
-                        icon: const Icon(Icons.qr_code_2, color: Colors.white),
-                        label: const Text('Quét mã QR',
-                            style:
-                                TextStyle(color: Colors.white, fontSize: 16)),
+                        icon: const Icon(Icons.qr_code_2),
+                        label: const Text('Quét mã QR'),
                       ),
                     ],
                   ),

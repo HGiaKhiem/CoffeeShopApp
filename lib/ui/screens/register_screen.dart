@@ -26,6 +26,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
   String? _error;
   Timer? _timer;
 
+  // 👁 Trạng thái ẩn/hiện mật khẩu
+  bool _showPass = false;
+  bool _showConfirm = false;
+
   final List<String> _backgrounds = [
     'https://i.imgur.com/f1ZkmgC.jpg',
     'https://i.imgur.com/IjY028x.jpg',
@@ -217,18 +221,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           icon: Icons.phone_outlined,
                         ),
                         const SizedBox(height: 16),
+                        // 🔐 Mật khẩu có icon con mắt
                         _buildBlurInput(
                           controller: _passCtrl,
                           hint: 'Mật khẩu',
                           icon: Icons.lock_outline,
-                          obscure: true,
+                          obscure: !_showPass,
+                          toggle: () => setState(() => _showPass = !_showPass),
+                          show: _showPass,
                         ),
                         const SizedBox(height: 16),
+                        // 🔐 Xác nhận mật khẩu có icon con mắt
                         _buildBlurInput(
                           controller: _confirmCtrl,
                           hint: 'Xác nhận mật khẩu',
                           icon: Icons.lock_outline,
-                          obscure: true,
+                          obscure: !_showConfirm,
+                          toggle: () =>
+                              setState(() => _showConfirm = !_showConfirm),
+                          show: _showConfirm,
                         ),
                         const SizedBox(height: 20),
                         if (_error != null)
@@ -299,11 +310,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
+  /// Input field có hiệu ứng mờ + icon con mắt (nếu là mật khẩu)
   Widget _buildBlurInput({
     required TextEditingController controller,
     required String hint,
     required IconData icon,
     bool obscure = false,
+    bool? show,
+    VoidCallback? toggle,
   }) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
@@ -335,6 +349,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
               ),
+              if (toggle != null)
+                IconButton(
+                  onPressed: toggle,
+                  icon: Icon(
+                    (show ?? false) ? Icons.visibility : Icons.visibility_off,
+                    color: Colors.white70,
+                  ),
+                ),
             ],
           ),
         ),

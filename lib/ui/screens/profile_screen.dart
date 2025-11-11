@@ -1,45 +1,47 @@
+// lib/ui/screens/profile_screen.dart
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:mime/mime.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
-import 'package:flutter_coffee_shop_app/controllers/home_controller.dart';
-import 'package:flutter_coffee_shop_app/controllers/auth_controller.dart';
+import 'package:flutter_coffee_shop_app/controllers/profile_controller.dart';
 import 'package:flutter_coffee_shop_app/entities/khachhang.dart';
 import 'package:flutter_coffee_shop_app/ui/screens/login_screen.dart';
+import 'package:flutter_coffee_shop_app/ui/screens/purchase_history_screen.dart';
 import 'package:flutter_coffee_shop_app/ui/theme/app_theme.dart';
 
 const String kDefaultAvatar =
     'https://rubeafovywlrgxblfmlr.supabase.co/storage/v1/object/public/avatar/avatar.png';
 
 class ProfileScreen extends StatefulWidget {
-  final KhachHang? customer; // truyền sẵn từ AppBar (nếu có)
-  const ProfileScreen({super.key, this.customer});
+  const ProfileScreen({super.key});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  KhachHang? _kh;
-  final _nameCtrl = TextEditingController();
-  final _phoneCtrl = TextEditingController();
+  final controller = ProfileController();
+  final supabase = Supabase.instance.client;
 
+  KhachHang? _kh;
   bool _loading = true;
   bool _saving = false;
   bool _uploadingAvatar = false;
 
+  final _nameCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
   String _avatarUrl = kDefaultAvatar;
 
   @override
   void initState() {
     super.initState();
-    _bootstrap();
+    _loadProfile();
   }
 
-  Future<void> _bootstrap() async {
-    final data = widget.customer ?? await HomeController.getCurrentCustomer();
+  Future<void> _loadProfile() async {
+    setState(() => _loading = true);
+    final data = await controller.loadCurrentCustomer(null);
     setState(() {
       _kh = data;
       _nameCtrl.text = data?.tenkh ?? '';
@@ -49,102 +51,80 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
   }
 
-  @override
-  void dispose() {
-    _nameCtrl.dispose();
-    _phoneCtrl.dispose();
-    super.dispose();
-  }
-
-  void _snack(String msg, Color bg) {
+  void _snack(String msg, Color color) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        backgroundColor: bg,
+        backgroundColor: color,
         content: Text(msg, style: const TextStyle(color: Colors.white)),
       ),
     );
   }
 
-  Future<XFile?> _pickImage() async {
-    final picker = ImagePicker();
-    // Web: chỉ gallery; Mobile: bạn có thể đổi thành camera nếu muốn
-    return picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+  Future<void> _saveProfile() async {
+    setState(() => _saving = true);
+    final err = await controller.updateProfile(
+      tenKh: _nameCtrl.text.trim(),
+      sdt: _phoneCtrl.text.trim(),
+    );
+    setState(() => _saving = false);
+    if (err == null) {
+      _snack('Đã lưu thông tin thành công', Colors.green);
+      _loadProfile();
+    } else {
+      _snack(err, Colors.red);
+    }
   }
 
   Future<void> _changeAvatar() async {
     try {
-      final uid = Supabase.instance.client.auth.currentUser?.id;
-      if (uid == null) {
-        _snack('Bạn chưa đăng nhập', Colors.red.shade700);
-        return;
-      }
-
-      final XFile? file = await _pickImage();
-      if (file == null) return;
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(source: ImageSource.gallery);
+      if (picked == null) return;
 
       setState(() => _uploadingAvatar = true);
 
-      final Uint8List bytes = await file.readAsBytes();
-      final ext = file.name.split('.').last.toLowerCase();
-      // Lưu theo thư mục UID để policy chặt chẽ
-      final path = 'avatar/$uid/${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final Uint8List bytes = await picked.readAsBytes();
+      final mimeType = lookupMimeType(picked.name);
+      final fileName =
+          '${_kh?.id_khachhang ?? "guest"}_${DateTime.now().millisecondsSinceEpoch}.jpg';
 
-      final storage = Supabase.instance.client.storage.from('avatar');
-      await storage.uploadBinary(
-        path,
-        bytes,
-        fileOptions: const FileOptions(upsert: true, cacheControl: '3600'),
-      );
-      final publicUrl = storage.getPublicUrl(path);
-
-      // Cập nhật DB
-      final err = await AuthController.updateKhachHang(
-        tenKh: _nameCtrl.text.trim().isEmpty
-            ? (_kh?.tenkh ?? '')
-            : _nameCtrl.text.trim(),
-        sdt: _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
-        avatarUrl: publicUrl,
-      );
-      if (err != null) {
+      try {
+        await supabase.storage.from('avatar').uploadBinary(
+              fileName,
+              bytes,
+              fileOptions: FileOptions(contentType: mimeType),
+            );
+      } on StorageException catch (e) {
+        _snack('Lỗi khi tải ảnh lên: ${e.message}', Colors.red);
         setState(() => _uploadingAvatar = false);
-        _snack('Lỗi cập nhật avatar: $err', Colors.red.shade700);
+        return;
+      } catch (e) {
+        _snack('Lỗi không xác định: $e', Colors.red);
+        setState(() => _uploadingAvatar = false);
         return;
       }
+
+      final publicUrl = supabase.storage.from('avatar').getPublicUrl(fileName);
+
+      await supabase.from('khachhang').update({'AvatarURL': publicUrl}).eq(
+          'id_khachhang', _kh!.id_khachhang);
 
       setState(() {
         _avatarUrl = publicUrl;
         _uploadingAvatar = false;
       });
-      _snack('Đã cập nhật ảnh đại diện', Colors.green.shade600);
+
+      _snack('Đã cập nhật ảnh đại diện', Colors.green);
+      Navigator.pop(context, true); // reload avatar ở Home
     } catch (e) {
+      _snack('Lỗi đổi ảnh: $e', Colors.red);
       setState(() => _uploadingAvatar = false);
-      _snack('Lỗi: $e', Colors.red.shade700);
-    }
-  }
-
-  Future<void> _saveProfile() async {
-    setState(() => _saving = true);
-    final err = await AuthController.updateKhachHang(
-      tenKh: _nameCtrl.text.trim().isEmpty
-          ? (_kh?.tenkh ?? '')
-          : _nameCtrl.text.trim(),
-      sdt: _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
-      // Avatar giữ nguyên; đổi bằng nút Đổi ảnh
-    );
-    setState(() => _saving = false);
-
-    if (err == null) {
-      _snack('Đã lưu thông tin', Colors.green.shade600);
-      _bootstrap();
-    } else {
-      _snack('Lỗi: $err', Colors.red.shade700);
     }
   }
 
   Future<void> _logout() async {
-    await AuthController.signOut();
+    await controller.logout();
     if (!mounted) return;
     Navigator.pushAndRemoveUntil(
       context,
@@ -158,7 +138,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (_loading) {
       return const Scaffold(
         backgroundColor: Apptheme.backgroundColor,
-        body: Center(child: CircularProgressIndicator()),
+        body: Center(child: CircularProgressIndicator(color: Colors.brown)),
       );
     }
 
@@ -168,18 +148,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
         title: const Text('Hồ sơ khách hàng'),
         backgroundColor: Colors.brown,
         actions: [
-          IconButton(
-            onPressed: _logout,
-            icon: const Icon(Icons.logout),
-            tooltip: 'Đăng xuất',
-          ),
+          IconButton(onPressed: _loadProfile, icon: const Icon(Icons.refresh)),
+          IconButton(onPressed: _logout, icon: const Icon(Icons.logout)),
         ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
           children: [
-            // Avatar + đổi ảnh
+            // --- ẢNH ĐẠI DIỆN ---
             Stack(
               alignment: Alignment.bottomRight,
               children: [
@@ -190,11 +167,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     width: 120,
                     height: 120,
                     fit: BoxFit.cover,
-                    errorBuilder: (c, e, s) => Image.network(
+                    errorBuilder: (_, __, ___) => Image.network(
                       kDefaultAvatar,
                       width: 120,
                       height: 120,
-                      fit: BoxFit.cover,
                     ),
                   ),
                 ),
@@ -226,127 +202,93 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const SizedBox(height: 20),
 
-            _field(
-              label: 'Họ tên',
-              controller: _nameCtrl,
-              hint: 'Nhập họ tên',
-              keyboard: TextInputType.name,
-            ),
+            _field('Họ tên', _nameCtrl, 'Nhập họ tên'),
             const SizedBox(height: 12),
-
-            _field(
-              label: 'Số điện thoại',
-              controller: _phoneCtrl,
-              hint: 'Nhập số điện thoại',
-              keyboard: TextInputType.phone,
-            ),
+            _field('Số điện thoại', _phoneCtrl, 'Nhập số điện thoại'),
             const SizedBox(height: 12),
-
-            _readonly(label: 'Email', value: _kh?.email ?? 'Chưa cập nhật'),
-            const SizedBox(height: 12),
-
+            _readonly('Email', _kh?.email ?? 'Chưa cập nhật'),
+            _readonly('Điểm tích lũy', '${_kh?.diemtichluy ?? 0} điểm'),
             _readonly(
-                label: 'Điểm tích lũy', value: '${_kh?.diemtichluy ?? 0} điểm'),
-            _readonly(
-                label: 'Hạng thành viên',
-                value: _rankOf(_kh?.diemtichluy ?? 0)),
+                'Hạng thành viên', controller.getRank(_kh?.diemtichluy ?? 0)),
             const SizedBox(height: 24),
 
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Apptheme.buttonBackground2Color,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
+            _button(Icons.save, _saving ? 'Đang lưu...' : 'Lưu thay đổi',
+                _saving ? null : _saveProfile, Colors.brown.shade600),
+            const SizedBox(height: 16),
+
+            _button(Icons.history, 'Xem lịch sử mua hàng', () {
+              if (_kh == null) return;
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      PurchaseHistoryScreen(idKhach: _kh!.id_khachhang),
                 ),
-                onPressed: _saving ? null : _saveProfile,
-                icon: _saving
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.save, color: Colors.white),
-                label: Text(
-                  _saving ? 'Đang lưu...' : 'Lưu thay đổi',
-                  style: const TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.w600),
-                ),
-              ),
-            ),
+              );
+            }, Colors.brown.shade700),
           ],
         ),
       ),
     );
   }
 
-  // -------- widgets phụ ----------
-  Widget _field({
-    required String label,
-    required TextEditingController controller,
-    required String hint,
-    TextInputType keyboard = TextInputType.text,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(color: Colors.white70)),
-        const SizedBox(height: 6),
-        TextField(
-          controller: controller,
-          keyboardType: keyboard,
-          style: const TextStyle(color: Colors.white),
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: const TextStyle(color: Colors.white54),
-            filled: true,
-            fillColor: Colors.white.withOpacity(0.08),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
-            ),
-            focusedBorder: const OutlineInputBorder(
-              borderRadius: BorderRadius.all(Radius.circular(12)),
-              borderSide: BorderSide(color: Colors.white),
+  // --- Widgets phụ ---
+  Widget _field(String label, TextEditingController c, String hint) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(color: Colors.white70)),
+          const SizedBox(height: 6),
+          TextField(
+            controller: c,
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              hintText: hint,
+              hintStyle: const TextStyle(color: Colors.white54),
+              filled: true,
+              fillColor: Colors.white.withOpacity(0.08),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
           ),
-        ),
-      ],
-    );
-  }
+        ],
+      );
 
-  Widget _readonly({required String label, required String value}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(color: Colors.white70)),
-        const SizedBox(height: 6),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.08),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withOpacity(0.2)),
-          ),
-          child: Text(value,
+  Widget _readonly(String label, String value) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(color: Colors.white70)),
+          const SizedBox(height: 6),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              value,
               style: const TextStyle(
-                  color: Colors.white, fontWeight: FontWeight.w600)),
-        ),
-      ],
-    );
-  }
+                  color: Colors.white, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      );
 
-  String _rankOf(int p) {
-    if (p >= 1000) return 'VIP';
-    if (p >= 500) return 'Gold';
-    if (p >= 200) return 'Silver';
-    return 'Thường';
-  }
+  Widget _button(
+          IconData icon, String text, VoidCallback? onPressed, Color color) =>
+      SizedBox(
+        width: double.infinity,
+        height: 48,
+        child: ElevatedButton.icon(
+          onPressed: onPressed,
+          icon: Icon(icon, color: Colors.white),
+          label: Text(text, style: const TextStyle(color: Colors.white)),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: color,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
+      );
 }

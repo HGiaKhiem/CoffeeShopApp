@@ -3,21 +3,38 @@ import 'package:flutter_coffee_shop_app/entities/cart_item.dart';
 
 class CartController extends ChangeNotifier {
   final List<CartItem> _items = [];
+  Map<String, dynamic>? _appliedVoucher; // lưu thông tin voucher đang dùng
 
   List<CartItem> get items => List.unmodifiable(_items);
+  Map<String, dynamic>? get appliedVoucher => _appliedVoucher;
 
-  /// Tổng tiền tất cả món trong giỏ
-  double get tongTien {
-    return _items.fold(0, (sum, item) => sum + (item.giaBan * item.soLuong));
+  /// Tổng tiền gốc
+  double get tongTien =>
+      _items.fold(0, (sum, item) => sum + (item.giaBan * item.soLuong));
+
+  /// Tổng sau khi áp dụng giảm giá
+  double get tongTienSauGiam {
+    if (_appliedVoucher == null) return tongTien;
+    final giam = _appliedVoucher!['phantram_giam'] ?? 0;
+    return tongTien * (1 - giam / 100);
   }
 
-  /// Thêm món mới vào giỏ
+  /// Áp dụng voucher
+  void applyVoucher(Map<String, dynamic> voucher) {
+    _appliedVoucher = voucher;
+    notifyListeners();
+  }
+
+  /// Gỡ voucher
+  void removeVoucher() {
+    _appliedVoucher = null;
+    notifyListeners();
+  }
+
   void addToCart(CartItem item) {
-    // Kiểm tra nếu món đã tồn tại (cùng id_mon & cùng tuychon)
     final index = _items.indexWhere((e) =>
         e.mon.id_mon == item.mon.id_mon &&
         e.tuyChon.toString() == item.tuyChon.toString());
-
     if (index != -1) {
       _items[index].soLuong += item.soLuong;
     } else {
@@ -26,28 +43,24 @@ class CartController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Cập nhật số lượng món
   void updateQuantity(CartItem item, int newQuantity) {
     if (newQuantity <= 0) {
       _items.remove(item);
     } else {
       final index = _items.indexOf(item);
-      if (index != -1) {
-        _items[index].soLuong = newQuantity;
-      }
+      if (index != -1) _items[index].soLuong = newQuantity;
     }
     notifyListeners();
   }
 
-  /// Xóa 1 món
   void removeItem(CartItem item) {
     _items.remove(item);
     notifyListeners();
   }
 
-  /// Xóa toàn bộ giỏ
   void clearCart() {
     _items.clear();
+    _appliedVoucher = null;
     notifyListeners();
   }
 }

@@ -7,3 +7,6 @@ export 'login_screen.dart';
 export 'register_screen.dart';
 export 'ban_screen.dart';
 export 'qr_scan_screen.dart';
+export 'purchase_history_screen.dart';
+export 'forgot_password_screen.dart';
+export 'reset_password_screen.dart';

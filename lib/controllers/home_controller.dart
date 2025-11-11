@@ -71,8 +71,13 @@ class HomeController {
   }
 
   static Future<KhachHang?> getCurrentCustomer() async {
+    await Future.delayed(const Duration(milliseconds: 500));
+
     final user = supabase.auth.currentUser;
-    if (user == null) return null;
+    if (user == null) {
+      print('⚠️ Chưa có session Supabase → user = null');
+      return null;
+    }
 
     try {
       final response = await supabase
@@ -94,10 +99,6 @@ class HomeController {
     }
   }
 
-  // ============================================================
-  // 🟤 XỬ LÝ DỮ LIỆU TRONG APP
-  // ============================================================
-
   /// 🔍 Tìm kiếm theo tên món
   static List<Coffee> searchCoffees(List<Coffee> coffees, String query) {
     if (query.isEmpty) return coffees;
@@ -118,5 +119,29 @@ class HomeController {
   /// ☕ Lọc món theo loại (category)
   static List<Coffee> filterByCategory(List<Coffee> coffees, int categoryId) {
     return coffees.where((c) => c.id_loaimon == categoryId).toList();
+  }
+
+  static Future<List<Map<String, dynamic>>> getRecentReviews(int idMon) async {
+    try {
+      final response = await supabase
+          .from('danhgia_mon')
+          .select('''
+            sosao,
+            nhanxet,
+            ngaydanhgia,
+            khachhang(id_khachhang, tenkh, "AvatarURL")
+          ''')
+          .eq('id_mon', idMon)
+          .order('ngaydanhgia', ascending: false)
+          .limit(3); // chỉ lấy 3 đánh giá mới nhất
+
+      return List<Map<String, dynamic>>.from(response);
+    } on PostgrestException catch (e) {
+      print('❌ Lỗi load đánh giá: ${e.message}');
+      return [];
+    } catch (e) {
+      print('❌ Lỗi không xác định: $e');
+      return [];
+    }
   }
 }
