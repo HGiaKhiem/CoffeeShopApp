@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_coffee_shop_app/controllers/home_controller.dart';
 import 'package:flutter_coffee_shop_app/entities/entities_library.dart';
-import 'package:flutter_coffee_shop_app/ui/screens/introduction_screen.dart';
-import 'package:flutter_coffee_shop_app/ui/screens/qr_scan_screen.dart';
-import 'package:flutter_coffee_shop_app/ui/widgets/widgets.dart';
 import 'package:flutter_coffee_shop_app/ui/theme/app_theme.dart';
+import 'package:flutter_coffee_shop_app/ui/widgets/widgets.dart';
+import 'package:flutter_coffee_shop_app/ui/screens/profile_screen.dart';
+import 'package:flutter_coffee_shop_app/ui/screens/qr_scan_screen.dart';
+import 'package:flutter_coffee_shop_app/ui/screens/introduction_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:flutter_coffee_shop_app/ui/screens/profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -17,15 +17,15 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final _supabase = Supabase.instance.client;
+  final supabase = Supabase.instance.client;
 
   List<Coffee> _allCoffees = [];
+  List<Coffee> _filteredCoffees = [];
   List<LoaiMon> _loaiMons = [];
-  List<Coffee> _displayedCoffees = [];
 
-  bool _isLoading = true;
-  int? _selectedCategoryId;
-  String _searchQuery = '';
+  bool _loading = true;
+  String _search = '';
+  int? _selectedLoai;
 
   int? _idBan;
   int? _idKhach;
@@ -36,184 +36,144 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
 
-    final session = _supabase.auth.currentSession;
-    if (session != null) {
-      _loadInitData();
-    }
+    // Chờ auth web load
+    Future.delayed(const Duration(milliseconds: 300), () {
+      _loadAll();
+    });
 
-    _supabase.auth.onAuthStateChange.listen((data) {
-      final event = data.event;
-      final session = data.session;
-
-      if (event == AuthChangeEvent.signedIn && session != null) {
-        debugPrint('✅ Supabase user đã đăng nhập, reload Home');
-        _loadInitData();
-      } else if (event == AuthChangeEvent.signedOut) {
-        debugPrint('🚪 Supabase user đã đăng xuất, reset về khách vãng lai');
-        setState(() {
-          _idKhach = null;
-          _tenKhach = 'Khách tại bàn ${_idBan ?? 1}';
-          _avatarUrl =
-              'https://rubeafovywlrgxblfmlr.supabase.co/storage/v1/object/public/avatar/avatar.png';
-        });
-      }
+    // Reload khi login/logout
+    supabase.auth.onAuthStateChange.listen((event) {
+      _loadAll();
     });
   }
 
-  /// ✅ Load dữ liệu: bàn + khách + danh sách món
-  Future<void> _loadInitData() async {
+  Future<void> _loadAll() async {
+    setState(() => _loading = true);
+
+    // Lấy id_ban từ local
     final prefs = await SharedPreferences.getInstance();
-    _idBan = prefs.getInt('id_ban');
+    _idBan = prefs.getInt('id_ban') ?? 1;
 
-    // 🟢 Nếu user đã đăng nhập Supabase
-    final currentUser = _supabase.auth.currentUser;
+    // Lấy user hiện tại
+    final user = supabase.auth.currentUser;
 
-    if (currentUser != null) {
-      try {
-        final khach = await _supabase
-            .from('khachhang')
-            .select('id_khachhang, tenkh, avatarurl')
-            .eq('UID', currentUser.id)
-            .maybeSingle();
-
-        if (khach != null) {
-          _idKhach = khach['id_khachhang'] as int?;
-          _tenKhach = khach['tenkh'] ?? 'Khách hàng';
-          _avatarUrl = khach['avatarurl'] ??
-              'https://rubeafovywlrgxblfmlr.supabase.co/storage/v1/object/public/avatar/avatar.png';
-
-          await prefs.setInt('id_khachhang', _idKhach!);
-        } else {
-          _tenKhach = 'Khách tại bàn $_idBan';
-          _avatarUrl =
-              'https://rubeafovywlrgxblfmlr.supabase.co/storage/v1/object/public/avatar/avatar.png';
-        }
-      } catch (e) {
-        debugPrint('❌ Lỗi khi tải thông tin khách: $e');
-        _tenKhach = 'Khách tại bàn $_idBan';
+    if (user != null) {
+      final kh = await HomeController.getCurrentCustomer();
+      if (kh != null) {
+        _idKhach = kh.id_khachhang;
+        _tenKhach = kh.tenkh;
+        _avatarUrl = kh.avatarURL;
+        prefs.setInt('id_khachhang', _idKhach!);
+      } else {
+        _tenKhach = "Khách tại bàn $_idBan";
         _avatarUrl =
-            'https://rubeafovywlrgxblfmlr.supabase.co/storage/v1/object/public/avatar/avatar.png';
+            "https://rubeafovywlrgxblfmlr.supabase.co/storage/v1/object/public/avatar/avatar.png";
       }
     } else {
-      // 🟠 Nếu chưa đăng nhập (khách vãng lai)
-      _idKhach = prefs.getInt('id_khachhang');
-      _tenKhach = 'Khách tại bàn $_idBan';
+      _tenKhach = "Khách tại bàn $_idBan";
       _avatarUrl =
-          'https://rubeafovywlrgxblfmlr.supabase.co/storage/v1/object/public/avatar/avatar.png';
+          "https://rubeafovywlrgxblfmlr.supabase.co/storage/v1/object/public/avatar/avatar.png";
+
+      _idKhach = prefs.getInt('id_khachhang');
     }
 
-    // 🧾 Load danh sách món và loại món
-    final coffees = await HomeController.getAllCoffees();
-    final loaiMons = await HomeController.getAllLoaiMon();
+    // Load dữ liệu menu
+    final mon = await HomeController.getAllCoffees();
+    final loai = await HomeController.getAllLoaiMon();
 
     setState(() {
-      _allCoffees = coffees;
-      _loaiMons = loaiMons;
-      _displayedCoffees = coffees;
-      _isLoading = false;
+      _allCoffees = mon;
+      _filteredCoffees = mon;
+      _loaiMons = loai;
+      _loading = false;
     });
-
-    debugPrint('👤 Đã load: $_tenKhach');
   }
 
-  void _applyFilters() {
-    List<Coffee> filtered = _allCoffees;
-    if (_selectedCategoryId != null) {
-      filtered =
-          HomeController.filterByCategory(filtered, _selectedCategoryId!);
+  void _filter() {
+    List<Coffee> list = _allCoffees;
+
+    if (_selectedLoai != null) {
+      list = list.where((c) => c.id_loaimon == _selectedLoai).toList();
     }
-    if (_searchQuery.isNotEmpty) {
-      filtered = HomeController.searchCoffees(filtered, _searchQuery);
+    if (_search.isNotEmpty) {
+      list = HomeController.searchCoffees(list, _search);
     }
-    setState(() => _displayedCoffees = filtered);
-  }
 
-  void _onCategorySelected(int idLoai) {
-    setState(() {
-      if (_selectedCategoryId == idLoai) {
-        _selectedCategoryId = null;
-      } else {
-        _selectedCategoryId = idLoai;
-      }
-    });
-    _applyFilters();
-  }
-
-  void _onSearchChanged(String value) {
-    _searchQuery = value;
-    _applyFilters();
+    setState(() => _filteredCoffees = list);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      extendBody: true,
       backgroundColor: Apptheme.backgroundColor,
+      extendBody: true,
+
+      // ========================= BODY =========================
       body: SafeArea(
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
+        child: _loading
+            ? const Center(
+                child: CircularProgressIndicator(color: Colors.brown))
             : CustomScrollView(
                 slivers: [
-                  // 🧱 AppBar
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 22, vertical: 20),
-                    sliver: SliverToBoxAdapter(
+                  // AppBar custom
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 22, vertical: 18),
                       child: _buildAppBar(),
                     ),
                   ),
 
-                  // 🧱 Tiêu đề
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 22),
-                    sliver: SliverToBoxAdapter(
+                  // Title
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 22),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Discover Your', style: Apptheme.tileLarge),
-                          Text('Perfect Coffee', style: Apptheme.tileLarge),
+                          Text("Discover Your", style: Apptheme.tileLarge),
+                          Text("Perfect Coffee", style: Apptheme.tileLarge),
                           const SizedBox(height: 20),
                         ],
                       ),
                     ),
                   ),
 
-                  // 🔍 Thanh tìm kiếm
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 22),
-                    sliver: SliverToBoxAdapter(
-                      child: SearchWidget(onChanged: _onSearchChanged),
+                  // Search
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 22),
+                      child: SearchWidget(
+                        onChanged: (v) {
+                          _search = v;
+                          _filter();
+                        },
+                      ),
                     ),
                   ),
 
-                  // ☕️ Loại món
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 22, vertical: 20),
-                    sliver: SliverToBoxAdapter(
+                  // Category chips
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 22, vertical: 20),
                       child: SizedBox(
                         height: 48,
                         child: ListView.builder(
                           scrollDirection: Axis.horizontal,
                           itemCount: _loaiMons.length,
-                          itemBuilder: (context, index) {
-                            final loai = _loaiMons[index];
-                            final isActive =
-                                _selectedCategoryId == loai.id_loaimon;
+                          itemBuilder: (context, i) {
+                            final loai = _loaiMons[i];
+                            final active = loai.id_loaimon == _selectedLoai;
+
                             return Padding(
-                              padding: const EdgeInsets.only(right: 15),
+                              padding: const EdgeInsets.only(right: 12),
                               child: ChoiceChip(
-                                label: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 6, vertical: 2),
-                                  child: Text(
-                                    loai.tenloaimon,
-                                    style: isActive
+                                selected: active,
+                                label: Text(loai.tenloaimon,
+                                    style: active
                                         ? Apptheme.chipActive
-                                        : Apptheme.chipInactive,
-                                  ),
-                                ),
-                                selected: isActive,
+                                        : Apptheme.chipInactive),
                                 selectedColor:
                                     Apptheme.accentColor.withOpacity(0.25),
                                 backgroundColor:
@@ -221,13 +181,17 @@ class _HomeScreenState extends State<HomeScreen> {
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(22),
                                   side: BorderSide(
-                                    color: isActive
-                                        ? Apptheme.accentColor
-                                        : Apptheme.gray3Color,
-                                  ),
+                                      color: active
+                                          ? Apptheme.accentColor
+                                          : Apptheme.gray3Color),
                                 ),
-                                onSelected: (_) =>
-                                    _onCategorySelected(loai.id_loaimon),
+                                onSelected: (_) {
+                                  setState(() {
+                                    _selectedLoai =
+                                        active ? null : loai.id_loaimon;
+                                  });
+                                  _filter();
+                                },
                               ),
                             );
                           },
@@ -236,22 +200,22 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
 
-                  // 🧾 Featured Drinks
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 22),
-                    sliver: SliverToBoxAdapter(
+                  // Featured Drinks
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 22),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Featured Drinks', style: Apptheme.subtileLarge),
+                          Text("Featured Drinks", style: Apptheme.subtileLarge),
                           const SizedBox(height: 15),
                           SizedBox(
                             height: 260,
                             child: ListView.builder(
                               scrollDirection: Axis.horizontal,
-                              itemCount: _displayedCoffees.length,
-                              itemBuilder: (context, index) {
-                                final coffee = _displayedCoffees[index];
+                              itemCount: _filteredCoffees.length,
+                              itemBuilder: (_, i) {
+                                final coffee = _filteredCoffees[i];
                                 return Padding(
                                   padding: const EdgeInsets.only(right: 15),
                                   child: VerticalCardWidget(
@@ -268,69 +232,53 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
 
-                  // 🧾 Special for You
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 22, vertical: 20),
-                    sliver: SliverToBoxAdapter(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Special for You', style: Apptheme.subtileLarge),
-                          const SizedBox(height: 15),
-                          _displayedCoffees.isEmpty
-                              ? const Center(
-                                  child: Padding(
-                                    padding: EdgeInsets.symmetric(vertical: 50),
-                                    child: Text(
-                                      'Không có món phù hợp',
-                                      style: TextStyle(color: Colors.white70),
-                                    ),
+                  // Special for You
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 22, vertical: 20),
+                      child: _filteredCoffees.isEmpty
+                          ? const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(30),
+                                child: Text("Không có món phù hợp",
+                                    style: TextStyle(
+                                        color: Colors.white70, fontSize: 16)),
+                              ),
+                            )
+                          : ListView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: _filteredCoffees.length,
+                              itemBuilder: (_, i) {
+                                final coffee = _filteredCoffees[i];
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 15),
+                                  child: HorizontalCardWidget(
+                                    coffee: coffee,
+                                    idBan: _idBan,
+                                    idKhachHang: _idKhach,
                                   ),
-                                )
-                              : ListView.builder(
-                                  scrollDirection: Axis.vertical,
-                                  itemCount: _displayedCoffees.length,
-                                  shrinkWrap: true,
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  itemBuilder: (context, index) {
-                                    final coffee = _displayedCoffees[index];
-                                    return Padding(
-                                      padding:
-                                          const EdgeInsets.only(bottom: 15),
-                                      child: HorizontalCardWidget(
-                                        coffee: coffee,
-                                        idBan: _idBan,
-                                        idKhachHang: _idKhach,
-                                      ),
-                                    );
-                                  },
-                                ),
-                        ],
-                      ),
+                                );
+                              },
+                            ),
                     ),
                   ),
                 ],
               ),
       ),
 
-      // Nút quét QR
+      // ================= FLOATING QR BUTTON ==================
       floatingActionButton: Transform.translate(
-        offset: const Offset(0, 8),
+        offset: const Offset(0, 6),
         child: FloatingActionButton(
           backgroundColor: Colors.brown,
-          elevation: 5,
           onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const QrScanScreen()),
-            );
+            Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const QrScanScreen()));
           },
-          child: const Icon(
-            Icons.qr_code_scanner_rounded,
-            color: Colors.white,
-            size: 28,
-          ),
+          child: const Icon(Icons.qr_code_scanner_rounded,
+              color: Colors.white, size: 28),
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
@@ -339,76 +287,61 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// 🧭 Custom AppBar hiển thị thông tin khách + bàn
-  Widget _buildAppBar() {
-    final user = _supabase.auth.currentUser; // 👈 Lấy user hiện tại
-    final email = user?.email;
-    final uid = user?.id;
+  // ===========================================================
+  // 🔥 CUSTOM APP BAR (hiển thị avatar + tên khách)
+  // ===========================================================
 
+  Widget _buildAppBar() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
+        // Nút menu
         CustomIconButton(
           onTap: () {
             Navigator.push(
               context,
-              MaterialPageRoute(
-                builder: (context) => const IntroductionScreen(),
-              ),
+              MaterialPageRoute(builder: (_) => const IntroductionScreen()),
             );
           },
           width: 50,
           height: 50,
-          child: const Icon(
-            Icons.menu,
-            color: Apptheme.iconColor,
-            size: 28,
-          ),
+          child: const Icon(Icons.menu, color: Colors.white, size: 28),
         ),
 
-        // 🔹 Nếu user đăng nhập rồi → hiển thị thông tin thật
+        // Avatar + Tên
         InkWell(
-          borderRadius: BorderRadius.circular(25),
+          borderRadius: BorderRadius.circular(30),
           onTap: () async {
             final updated = await Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const ProfileScreen()),
             );
-            if (updated == true) {
-              _loadInitData(); // refresh lại khi profile thay đổi
-            }
+            if (updated == true) _loadAll();
           },
           child: Row(
             children: [
               ClipRRect(
-                borderRadius: BorderRadius.circular(23),
+                borderRadius: BorderRadius.circular(24),
                 child: Image.network(
-                  // Nếu đã đăng nhập thì ưu tiên ảnh Supabase DB
-                  user != null
-                      ? (_avatarUrl ??
-                          'https://rubeafovywlrgxblfmlr.supabase.co/storage/v1/object/public/avatar/avatar.png')
-                      : 'https://rubeafovywlrgxblfmlr.supabase.co/storage/v1/object/public/avatar/avatar.png',
-                  height: 45,
+                  _avatarUrl ??
+                      "https://rubeafovywlrgxblfmlr.supabase.co/storage/v1/object/public/avatar/avatar.png",
                   width: 45,
+                  height: 45,
                   fit: BoxFit.cover,
                 ),
               ),
               const SizedBox(width: 10),
-
-              // ✅ Nếu có user thì lấy tên trong DB / email, không thì “Khách tại bàn”
               Text(
-                user != null
-                    ? (_tenKhach ?? email ?? 'Người dùng')
-                    : 'Khách tại bàn $_idBan',
+                _tenKhach ?? "Khách tại bàn $_idBan",
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w600,
                   fontSize: 14,
                 ),
-              ),
+              )
             ],
           ),
-        ),
+        )
       ],
     );
   }

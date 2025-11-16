@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_coffee_shop_app/controllers/auth_controller.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ResetPasswordScreen extends StatefulWidget {
   const ResetPasswordScreen({Key? key}) : super(key: key);
@@ -12,31 +13,42 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   final _passCtrl = TextEditingController();
   final _pass2Ctrl = TextEditingController();
 
-  bool _loadingLink = true; // đang xác thực liên kết từ email
-  bool _updating = false; // đang cập nhật mật khẩu
-  String? _message; // hiển thị lỗi / thông báo
+  bool _loadingLink = true;
+  bool _updating = false;
+  String? _message;
 
-  // 👁 Trạng thái ẩn/hiện mật khẩu
   bool _showPass = false;
   bool _showPass2 = false;
 
   @override
   void initState() {
     super.initState();
-    _verifyRecoveryLink();
+    _verifyAndRestoreSession();
   }
 
-  /// Kiểm tra & xác thực liên kết (code từ Gmail)
-  Future<void> _verifyRecoveryLink() async {
+  /// ✅ Kiểm tra và khôi phục session từ link Supabase
+  Future<void> _verifyAndRestoreSession() async {
     final uri = Uri.base;
-    final error = await AuthController.handleRecoveryLink(uri);
-    setState(() {
-      _loadingLink = false;
-      _message = error;
-    });
+    final code = uri.queryParameters['code'];
+    final type = uri.queryParameters['type'];
+
+    try {
+      if (code != null && type == 'recovery') {
+        await Supabase.instance.client.auth.exchangeCodeForSession(code);
+      }
+      setState(() {
+        _loadingLink = false;
+        _message = null;
+      });
+    } catch (e) {
+      setState(() {
+        _loadingLink = false;
+        _message = '❌ Liên kết không hợp lệ hoặc đã hết hạn.';
+      });
+    }
   }
 
-  /// Gửi mật khẩu mới lên Supabase
+  /// ✅ Gửi mật khẩu mới
   Future<void> _updatePassword() async {
     final pass = _passCtrl.text.trim();
     final confirm = _pass2Ctrl.text.trim();
@@ -114,7 +126,6 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                             ),
                           ),
                         ),
-                      // Ô nhập mật khẩu mới
                       TextField(
                         controller: _passCtrl,
                         obscureText: !_showPass,
@@ -142,7 +153,6 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      // Ô nhập lại mật khẩu
                       TextField(
                         controller: _pass2Ctrl,
                         obscureText: !_showPass2,

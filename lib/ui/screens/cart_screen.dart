@@ -106,9 +106,9 @@ class _CartScreenState extends State<CartScreen> {
 
   Future<void> _datMon(BuildContext context, CartController cart) async {
     if (cart.items.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('🛒 Giỏ hàng trống!')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('🛒 Giỏ hàng trống!')));
       return;
     }
 
@@ -120,13 +120,19 @@ class _CartScreenState extends State<CartScreen> {
           .delete()
           .eq('id_donhang', idDonHang);
 
-      final rows = cart.items.map((i) {
+      final rows = cart.items.map((item) {
+        final tuychon = {
+          'topping': item.tuyChon['topping'],
+          'size': item.tuyChon['size'],
+          'ghichu': item.tuyChon['ghichu'],
+        };
+
         return {
           'id_donhang': idDonHang,
-          'id_mon': i.mon.id_mon,
-          'soluong': i.soLuong,
-          'giaban': i.giaBan,
-          'tuychon_json': i.tuyChon,
+          'id_mon': item.mon.id_mon,
+          'soluong': item.soLuong,
+          'giaban': item.giaBan,
+          'tuychon_json': tuychon,
         };
       }).toList();
 
@@ -140,13 +146,14 @@ class _CartScreenState extends State<CartScreen> {
           .from('ban')
           .update({'trangthai': 'Có khách'}).eq('id_ban', widget.idBan);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('✅ Đặt món thành công!')),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('❌ Lỗi khi đặt món: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('✅ Đặt món thành công!')));
+    } catch (e, stack) {
+      debugPrint('❌ Lỗi khi đặt món: $e\n$stack');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('❌ Lỗi khi đặt món: $e')));
     }
   }
 
@@ -187,13 +194,13 @@ class _CartScreenState extends State<CartScreen> {
 
       cart.clearCart();
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('✅ Thanh toán thành công!')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('✅ Thanh toán thành công!')));
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('❌ Lỗi thanh toán: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('❌ Lỗi thanh toán: $e')));
     }
   }
 
@@ -231,7 +238,9 @@ class _CartScreenState extends State<CartScreen> {
                       return Card(
                         color: const Color(0xFF2B2B2B),
                         margin: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 8),
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
                         child: ListTile(
                           leading: ClipRRect(
                             borderRadius: BorderRadius.circular(10),
@@ -242,10 +251,13 @@ class _CartScreenState extends State<CartScreen> {
                               fit: BoxFit.cover,
                             ),
                           ),
-                          title: Text(item.mon.tenmon,
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600)),
+                          title: Text(
+                            item.mon.tenmon,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                           subtitle: Text(
                             'Giá: ${formatMoney(item.giaBan)}đ\nTổng: ${formatMoney(item.giaBan * item.soLuong)}đ',
                             style: const TextStyle(color: Colors.white70),
@@ -254,17 +266,25 @@ class _CartScreenState extends State<CartScreen> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               IconButton(
-                                icon: const Icon(Icons.remove_circle_outline,
-                                    color: Colors.white70),
+                                icon: const Icon(
+                                  Icons.remove_circle_outline,
+                                  color: Colors.white70,
+                                ),
                                 onPressed: () =>
                                     cart.updateQuantity(item, item.soLuong - 1),
                               ),
-                              Text('${item.soLuong}',
-                                  style: const TextStyle(
-                                      color: Colors.white, fontSize: 16)),
+                              Text(
+                                '${item.soLuong}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                ),
+                              ),
                               IconButton(
-                                icon: const Icon(Icons.add_circle_outline,
-                                    color: Colors.white70),
+                                icon: const Icon(
+                                  Icons.add_circle_outline,
+                                  color: Colors.white70,
+                                ),
                                 onPressed: () =>
                                     cart.updateQuantity(item, item.soLuong + 1),
                               ),
@@ -276,12 +296,15 @@ class _CartScreenState extends State<CartScreen> {
                   ),
                 ),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 22, vertical: 20),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 22,
+                    vertical: 20,
+                  ),
                   decoration: const BoxDecoration(
                     color: Color(0xFF2B2B2B),
-                    borderRadius:
-                        BorderRadius.vertical(top: Radius.circular(22)),
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(22),
+                    ),
                   ),
                   child: Column(
                     children: [
@@ -296,7 +319,8 @@ class _CartScreenState extends State<CartScreen> {
                             labelText: 'Chọn voucher giảm giá',
                             labelStyle: const TextStyle(color: Colors.white70),
                             border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12)),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
                           items: [
                             // ✅ Tuỳ chọn đầu tiên: Không dùng voucher
@@ -305,8 +329,9 @@ class _CartScreenState extends State<CartScreen> {
                               child: Text(
                                 'Không dùng voucher',
                                 style: TextStyle(
-                                    color: Colors.white70,
-                                    fontStyle: FontStyle.italic),
+                                  color: Colors.white70,
+                                  fontStyle: FontStyle.italic,
+                                ),
                               ),
                             ),
                             // ✅ Các voucher thật
@@ -346,20 +371,25 @@ class _CartScreenState extends State<CartScreen> {
                       Text(
                         'Tổng: ${formatMoney(cart.tongTien)}đ',
                         style: const TextStyle(
-                            color: Colors.white70, fontSize: 16),
+                          color: Colors.white70,
+                          fontSize: 16,
+                        ),
                       ),
                       if (cart.appliedVoucher != null)
                         Text(
                           '-${cart.appliedVoucher!['phantram_giam']}% (${cart.appliedVoucher!['ten_voucher']})',
                           style: const TextStyle(
-                              color: Colors.greenAccent, fontSize: 14),
+                            color: Colors.greenAccent,
+                            fontSize: 14,
+                          ),
                         ),
                       Text(
                         'Thanh toán: ${formatMoney(cart.tongTienSauGiam)}đ',
                         style: const TextStyle(
-                            fontSize: 20,
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold),
+                          fontSize: 20,
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       const SizedBox(height: 16),
                       Row(
@@ -394,7 +424,8 @@ class _CartScreenState extends State<CartScreen> {
                         onPressed: () => Navigator.push(
                           context,
                           MaterialPageRoute(
-                              builder: (_) => const QrScanScreen()),
+                            builder: (_) => const QrScanScreen(),
+                          ),
                         ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.brown.shade600,

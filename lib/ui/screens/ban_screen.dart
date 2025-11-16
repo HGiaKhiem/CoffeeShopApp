@@ -19,7 +19,7 @@ class _BanScreenState extends State<BanScreen> {
   Map<String, dynamic>? _ban;
   bool _loading = true;
   bool _hasCustomer = false;
-  int? _idKhach; // Nếu user đã login
+  int? _idKhach;
 
   @override
   void initState() {
@@ -30,7 +30,6 @@ class _BanScreenState extends State<BanScreen> {
   Future<void> _checkCurrentUser() async {
     final user = _supabase.auth.currentUser;
     if (user != null) {
-      // ✅ Lấy id_khach từ bảng khachhang theo email đăng nhập
       final res = await _supabase
           .from('khachhang')
           .select('id_khachhang')
@@ -45,7 +44,6 @@ class _BanScreenState extends State<BanScreen> {
     await _fetchBan();
   }
 
-  /// ✅ Lấy thông tin bàn từ Supabase
   Future<void> _fetchBan() async {
     try {
       final res = await _supabase
@@ -66,7 +64,6 @@ class _BanScreenState extends State<BanScreen> {
     }
   }
 
-  /// ✅ Khi khách vào menu quán
   Future<void> _vaoMenuQuan() async {
     if (_ban == null) return;
 
@@ -74,7 +71,6 @@ class _BanScreenState extends State<BanScreen> {
     final int idBan = _ban!['id_ban'];
     final String trangThai = _ban!['trangthai'];
 
-    // ❌ Nếu bàn có khách thì chặn lại
     if (trangThai != 'Trống') {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -85,19 +81,15 @@ class _BanScreenState extends State<BanScreen> {
       return;
     }
 
-    // ✅ Nếu chưa login thì set idKhach = 4 (Khachdattaiban)
     final int idKhach = _idKhach ?? 4;
 
-    // ✅ Cập nhật trạng thái bàn
     await _supabase
         .from('ban')
         .update({'trangthai': 'Có khách'}).eq('id_ban', idBan);
 
-    // ✅ Lưu id bàn + khách vào bộ nhớ cục bộ
     await prefs.setInt('id_ban', idBan);
     await prefs.setInt('id_khachhang', idKhach);
 
-    // Đảm bảo session được clear nếu là khách không đăng nhập
     await AuthController.signOut();
 
     if (!mounted) return;
@@ -107,7 +99,6 @@ class _BanScreenState extends State<BanScreen> {
     );
   }
 
-  /// ✅ Nếu khách muốn đăng nhập tài khoản riêng
   Future<void> _chuyenLogin() async {
     if (_ban == null) return;
     final prefs = await SharedPreferences.getInstance();
@@ -137,7 +128,6 @@ class _BanScreenState extends State<BanScreen> {
                 )
               : Stack(
                   children: [
-                    // 🌈 Nền gradient mượt
                     Container(
                       decoration: const BoxDecoration(
                         gradient: LinearGradient(
@@ -147,14 +137,10 @@ class _BanScreenState extends State<BanScreen> {
                         ),
                       ),
                     ),
-
-                    // Blur overlay nhẹ
                     BackdropFilter(
                       filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
                       child: Container(color: Colors.black.withOpacity(0.2)),
                     ),
-
-                    // Nội dung
                     SafeArea(
                       child: Padding(
                         padding: const EdgeInsets.all(26),
@@ -179,8 +165,6 @@ class _BanScreenState extends State<BanScreen> {
                               ),
                             ),
                             const SizedBox(height: 30),
-
-                            // Thông tin bàn
                             Text(
                               'Bàn số ${_ban!['soban']}',
                               style: const TextStyle(
@@ -199,8 +183,6 @@ class _BanScreenState extends State<BanScreen> {
                               ),
                             ),
                             const SizedBox(height: 40),
-
-                            // Nút hành động
                             SizedBox(
                               width: double.infinity,
                               child: ElevatedButton.icon(
@@ -233,7 +215,6 @@ class _BanScreenState extends State<BanScreen> {
                               ),
                             ),
                             const SizedBox(height: 20),
-
                             OutlinedButton.icon(
                               onPressed: _chuyenLogin,
                               icon: const Icon(Icons.login,
@@ -253,9 +234,8 @@ class _BanScreenState extends State<BanScreen> {
                               ),
                             ),
                             const SizedBox(height: 40),
-
                             Text(
-                              'Quét mã QR trên bàn để gọi món.\nSau khi thanh toán, bàn sẽ được làm mới.',
+                              'Quét mã QR trên bàn để gọi món.\n',
                               style: TextStyle(
                                 color: Colors.white.withOpacity(0.7),
                                 fontSize: 14,

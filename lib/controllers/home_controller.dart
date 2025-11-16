@@ -4,80 +4,96 @@ import '../entities/entities_library.dart';
 class HomeController {
   static final supabase = Supabase.instance.client;
 
-  /// 🟩 Lấy danh sách món (Coffee)
+  /// ⏳ Hàm chờ auth ready (đặc biệt quan trọng cho Flutter Web)
+  static Future<void> waitForAuthReady() async {
+    int retry = 0;
+    while (supabase.auth.currentSession == null && retry < 10) {
+      await Future.delayed(const Duration(milliseconds: 150));
+      retry++;
+    }
+  }
+
+  /// 🟩 Lấy danh sách món
   static Future<List<Coffee>> getAllCoffees() async {
+    await waitForAuthReady();
+
     try {
       final response = await supabase.from('mon').select('*');
-      print('✅ [Supabase] Dữ liệu món: $response');
 
-      return (response as List).map((json) => Coffee.fromJson(json)).toList();
-    } on PostgrestException catch (e) {
-      print('❌ Lỗi Supabase khi fetch coffee: ${e.message}');
+      if (response is List && response.isNotEmpty) {
+        print("✅ [Supabase] mon: ${response.length} món");
+        return response.map((json) => Coffee.fromJson(json)).toList();
+      }
+
+      print("⚠️ [Supabase] mon trả về rỗng (auth web load chậm?)");
       return [];
     } catch (e) {
-      print('⚠️ Lỗi khác khi fetch coffee: $e');
+      print('❌ Lỗi load mon: $e');
       return [];
     }
   }
 
-  /// 🟩 Lấy danh sách loại món
+  /// 🟩 Danh sách loại món
   static Future<List<LoaiMon>> getAllLoaiMon() async {
+    await waitForAuthReady();
+
     try {
       final response = await supabase.from('loaimon').select('*');
-      print('✅ [Supabase] Dữ liệu loại món: $response');
 
-      return (response as List).map((json) => LoaiMon.fromJson(json)).toList();
-    } on PostgrestException catch (e) {
-      print('❌ Lỗi Supabase khi fetch loại món: ${e.message}');
+      if (response is List && response.isNotEmpty) {
+        print("✅ [Supabase] loaimon: ${response.length} loại");
+        return response.map((json) => LoaiMon.fromJson(json)).toList();
+      }
+
+      print("⚠️ [Supabase] loaimon rỗng");
       return [];
     } catch (e) {
-      print('⚠️ Lỗi khác khi fetch loại món: $e');
+      print('❌ Lỗi load loaimon: $e');
       return [];
     }
   }
 
-  /// 🟩 Lấy danh sách introduction
+  /// 🟩 Lấy introduction
   static Future<List<Introduction>> getAllIntroductions() async {
+    await waitForAuthReady();
+
     try {
       final response = await supabase.from('introductions').select('*');
-      print('✅ [Supabase] Dữ liệu introduction: $response');
 
-      return (response as List)
-          .map((json) => Introduction.fromJson(json))
-          .toList();
-    } on PostgrestException catch (e) {
-      print('❌ Lỗi Supabase khi fetch introduction: ${e.message}');
+      if (response is List) {
+        return response.map((e) => Introduction.fromJson(e)).toList();
+      }
+
       return [];
     } catch (e) {
-      print('⚠️ Lỗi khác khi fetch introduction: $e');
+      print('❌ Lỗi load introductions: $e');
       return [];
     }
   }
 
-  /// 🟩 Lấy danh sách size
+  /// 🟩 Lấy size
   static Future<List<Size>> getAllSizes() async {
+    await waitForAuthReady();
+
     try {
       final response = await supabase.from('size').select('*');
-      print('✅ [Supabase] Dữ liệu size: $response');
 
-      return (response as List).map((json) => Size.fromJson(json)).toList();
-    } on PostgrestException catch (e) {
-      print('❌ Lỗi Supabase khi fetch size: ${e.message}');
+      if (response is List) {
+        return response.map((e) => Size.fromJson(e)).toList();
+      }
       return [];
     } catch (e) {
-      print('⚠️ Lỗi khác khi fetch size: $e');
+      print('❌ Lỗi load size: $e');
       return [];
     }
   }
 
+  /// 🟩 Lấy thông tin khách hàng hiện tại
   static Future<KhachHang?> getCurrentCustomer() async {
-    await Future.delayed(const Duration(milliseconds: 500));
+    await waitForAuthReady();
 
     final user = supabase.auth.currentUser;
-    if (user == null) {
-      print('⚠️ Chưa có session Supabase → user = null');
-      return null;
-    }
+    if (user == null) return null;
 
     try {
       final response = await supabase
@@ -87,38 +103,31 @@ class HomeController {
           .maybeSingle();
 
       if (response != null) {
-        print('✅ Dữ liệu khách hàng: $response');
+        print("👤 Khách: ${response['tenkh']}");
         return KhachHang.fromJson(response);
-      } else {
-        print('⚠️ Không tìm thấy khách hàng cho UID: ${user.id}');
-        return null;
       }
+      return null;
     } catch (e) {
-      print('❌ Lỗi khi fetch khách hàng: $e');
+      print("❌ Lỗi load khách: $e");
       return null;
     }
   }
 
-  /// 🔍 Tìm kiếm theo tên món
+  /// 🔍 Tìm kiếm
   static List<Coffee> searchCoffees(List<Coffee> coffees, String query) {
-    if (query.isEmpty) return coffees;
-    final lowerQuery = query.toLowerCase();
-    return coffees
-        .where((c) => c.tenmon.toLowerCase().contains(lowerQuery))
-        .toList();
+    final q = query.toLowerCase();
+    return coffees.where((c) => c.tenmon.toLowerCase().contains(q)).toList();
   }
 
-  /// 💎 Lấy danh sách món đặc biệt (giá cao hơn trung bình)
   static List<Coffee> getSpecialCoffees(List<Coffee> coffees) {
     if (coffees.isEmpty) return [];
-    final avgPrice =
+    final avg =
         coffees.map((c) => c.gia).reduce((a, b) => a + b) / coffees.length;
-    return coffees.where((c) => c.gia > avgPrice).toList();
+    return coffees.where((c) => c.gia > avg).toList();
   }
 
-  /// ☕ Lọc món theo loại (category)
-  static List<Coffee> filterByCategory(List<Coffee> coffees, int categoryId) {
-    return coffees.where((c) => c.id_loaimon == categoryId).toList();
+  static List<Coffee> filterByCategory(List<Coffee> list, int id) {
+    return list.where((c) => c.id_loaimon == id).toList();
   }
 
   static Future<List<Map<String, dynamic>>> getRecentReviews(int idMon) async {
@@ -133,14 +142,11 @@ class HomeController {
           ''')
           .eq('id_mon', idMon)
           .order('ngaydanhgia', ascending: false)
-          .limit(3); // chỉ lấy 3 đánh giá mới nhất
+          .limit(3);
 
       return List<Map<String, dynamic>>.from(response);
-    } on PostgrestException catch (e) {
-      print('❌ Lỗi load đánh giá: ${e.message}');
-      return [];
     } catch (e) {
-      print('❌ Lỗi không xác định: $e');
+      print('❌ Lỗi load đánh giá: $e');
       return [];
     }
   }

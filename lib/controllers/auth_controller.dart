@@ -107,7 +107,7 @@ class AuthController {
     try {
       // 🔹 Luồng chuẩn Supabase (2025):
       // Dùng redirectTo để mở trang /reset-password của web đã deploy
-      const redirectUrl = 'https://coffeeshop-app-bb920.web.app/reset-password';
+      const redirectUrl = 'https://coffeeshop-app-bb920.web.app/';
 
       await supabase.auth.resetPasswordForEmail(
         email.trim(),

@@ -80,22 +80,35 @@ class MyApp extends StatelessWidget {
       home: Builder(
         builder: (context) {
           final uri = Uri.base;
-          final path = uri.path;
           final type = uri.queryParameters['type'];
+          final code = uri.queryParameters['code'];
           final token = uri.queryParameters['token'];
+          final path = uri.path;
 
-          // 🟤 Link reset password (email)
-          // Supabase sẽ tự detect & exchange code nhờ detectSessionInUrl = true
-          if (path == '/reset-password' || type == 'recovery') {
-            return ResetPasswordScreen();
+          // ⚠️ Nếu Supabase trả về lỗi
+          if (uri.queryParameters['error'] != null) {
+            return const Scaffold(
+              backgroundColor: Colors.black,
+              body: Center(
+                child: Text(
+                  '⚠️ Liên kết không hợp lệ hoặc đã hết hạn.',
+                  style: TextStyle(color: Colors.white),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            );
           }
 
-          // 🟢 QR Bàn: VD: https://coffeeshop-app-bb920.web.app/ban?token=abc123
+          if (code != null || type == 'recovery') {
+            return const ResetPasswordScreen();
+          }
+
+          // ✅ QR bàn
           if (path == '/ban' && token != null) {
             return BanScreen(token: token);
           }
 
-          // 🔵 Mặc định: Login
+          // ✅ Mặc định
           return const LoginScreen();
         },
       ),
