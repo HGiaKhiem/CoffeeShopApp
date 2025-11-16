@@ -1,10 +1,11 @@
+import 'package:flutter_coffee_shop_app/entities/topping.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../entities/entities_library.dart';
 
 class HomeController {
   static final supabase = Supabase.instance.client;
 
-  /// ⏳ Hàm chờ auth ready (đặc biệt quan trọng cho Flutter Web)
+  /// Hàm chờ auth ready
   static Future<void> waitForAuthReady() async {
     int retry = 0;
     while (supabase.auth.currentSession == null && retry < 10) {
@@ -13,27 +14,24 @@ class HomeController {
     }
   }
 
-  /// 🟩 Lấy danh sách món
+  /// Lấy danh sách món
   static Future<List<Coffee>> getAllCoffees() async {
     await waitForAuthReady();
 
     try {
-      final response = await supabase.from('mon').select('*');
+      final response = await supabase
+          .from('mon')
+          .select('*')
+          .eq('trangthai', true); // chỉ lấy món đang bán
 
-      if (response is List && response.isNotEmpty) {
-        print("✅ [Supabase] mon: ${response.length} món");
-        return response.map((json) => Coffee.fromJson(json)).toList();
-      }
-
-      print("⚠️ [Supabase] mon trả về rỗng (auth web load chậm?)");
-      return [];
+      return (response as List).map((json) => Coffee.fromJson(json)).toList();
     } catch (e) {
-      print('❌ Lỗi load mon: $e');
+      print("Lỗi load mon: $e");
       return [];
     }
   }
 
-  /// 🟩 Danh sách loại món
+  /// Danh sách loại món
   static Future<List<LoaiMon>> getAllLoaiMon() async {
     await waitForAuthReady();
 
@@ -41,19 +39,19 @@ class HomeController {
       final response = await supabase.from('loaimon').select('*');
 
       if (response is List && response.isNotEmpty) {
-        print("✅ [Supabase] loaimon: ${response.length} loại");
+        print("[Supabase] loaimon: ${response.length} loại");
         return response.map((json) => LoaiMon.fromJson(json)).toList();
       }
 
-      print("⚠️ [Supabase] loaimon rỗng");
+      print("[Supabase] loaimon rỗng");
       return [];
     } catch (e) {
-      print('❌ Lỗi load loaimon: $e');
+      print("Lỗi load loaimon: $e");
       return [];
     }
   }
 
-  /// 🟩 Lấy introduction
+  /// Lấy introduction
   static Future<List<Introduction>> getAllIntroductions() async {
     await waitForAuthReady();
 
@@ -66,12 +64,12 @@ class HomeController {
 
       return [];
     } catch (e) {
-      print('❌ Lỗi load introductions: $e');
+      print("Lỗi load introductions: $e");
       return [];
     }
   }
 
-  /// 🟩 Lấy size
+  ///  Lấy size
   static Future<List<Size>> getAllSizes() async {
     await waitForAuthReady();
 
@@ -83,12 +81,29 @@ class HomeController {
       }
       return [];
     } catch (e) {
-      print('❌ Lỗi load size: $e');
+      print("Lỗi load size: $e");
       return [];
     }
   }
 
-  /// 🟩 Lấy thông tin khách hàng hiện tại
+  ///  Lấy danh sách topping
+  static Future<List<ToppingModel>> getAllToppings() async {
+    await waitForAuthReady();
+
+    try {
+      final response = await supabase
+          .from('topping')
+          .select('*')
+          .eq('trangthai', true); // chỉ lấy topping còn bán
+
+      return (response as List).map((e) => ToppingModel.fromJson(e)).toList();
+    } catch (e) {
+      print("Lỗi load topping: $e");
+      return [];
+    }
+  }
+
+  /// Lấy thông tin khách hàng hiện tại
   static Future<KhachHang?> getCurrentCustomer() async {
     await waitForAuthReady();
 
@@ -103,17 +118,17 @@ class HomeController {
           .maybeSingle();
 
       if (response != null) {
-        print("👤 Khách: ${response['tenkh']}");
+        print("Khách: ${response['tenkh']}");
         return KhachHang.fromJson(response);
       }
       return null;
     } catch (e) {
-      print("❌ Lỗi load khách: $e");
+      print("Lỗi load khách: $e");
       return null;
     }
   }
 
-  /// 🔍 Tìm kiếm
+  ///  Tìm kiếm
   static List<Coffee> searchCoffees(List<Coffee> coffees, String query) {
     final q = query.toLowerCase();
     return coffees.where((c) => c.tenmon.toLowerCase().contains(q)).toList();
@@ -146,7 +161,33 @@ class HomeController {
 
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
-      print('❌ Lỗi load đánh giá: $e');
+      print("Lỗi load đánh giá: $e");
+      return [];
+    }
+  }
+
+  static Future<List<Coffee>> getTopLikedDrinks() async {
+    try {
+      final response = await supabase.from('view_top_like').select('id_mon');
+
+      print("TOP LIKE IDS: $response");
+
+      final List<int> ids =
+          (response as List).map<int>((e) => e['id_mon'] as int).toList();
+
+      if (ids.isEmpty) return [];
+
+      final monData = await supabase
+          .from('mon')
+          .select('*')
+          .inFilter('id_mon', ids)
+          .eq('trangthai', true);
+
+      print("FULL MONS: $monData");
+
+      return (monData as List).map((json) => Coffee.fromJson(json)).toList();
+    } catch (e) {
+      print("Lỗi load top like: $e");
       return [];
     }
   }
