@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../entities/cart_item.dart';
@@ -38,37 +39,18 @@ class CartController extends ChangeNotifier {
     }
   }
 
-  Future<List<Map<String, dynamic>>> loadVouchers() async {
-    final idKhach = await getIdKhachHangFromUid();
-    final data = await _supabase
-        .from('khachhang_voucher')
-        .select('id_khv, voucher(ten_voucher, phantram_giam)')
-        .eq('id_khachhang', idKhach)
-        .eq('trangthai', 'CHUA_SU_DUNG');
-
-    return List<Map<String, dynamic>>.from(data);
-  }
-
-  void applyVoucher(Map<String, dynamic> voucher) {
-    _appliedVoucher = voucher;
-    notifyListeners();
-  }
-
-  void removeVoucher() {
-    _appliedVoucher = null;
-    notifyListeners();
-  }
-
+  //        GIỎ HÀNG
   void addToCart(CartItem item) {
     final index = _items.indexWhere((e) =>
         e.mon.id_mon == item.mon.id_mon &&
-        e.tuyChon.toString() == item.tuyChon.toString());
+        jsonEncode(e.tuyChon) == jsonEncode(item.tuyChon));
 
     if (index != -1) {
       _items[index].soLuong += item.soLuong;
     } else {
       _items.add(item);
     }
+
     notifyListeners();
   }
 
@@ -93,6 +75,8 @@ class CartController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // =============================
+  //   TẠO HOẶC LẤY ĐƠN HÀNG
   Future<int> getOrCreateDonHang(int idBan) async {
     final existing = await _supabase
         .from('donhang')
@@ -121,6 +105,8 @@ class CartController extends ChangeNotifier {
     return (inserted['id_donhang'] as num).toInt();
   }
 
+  // =============================
+  //         ĐẶT MÓN
   Future<String?> datMon(int idBan) async {
     if (_items.isEmpty) return "Giỏ hàng trống";
 
@@ -130,12 +116,20 @@ class CartController extends ChangeNotifier {
       await _supabase.from('chitietdonhang').delete().eq('id_donhang', idDon);
 
       final rows = _items.map((item) {
+        final tc = item.tuyChon;
+
+        final tuyChonClean = {
+          'size': tc['size'],
+          'toppings': tc['toppings'],
+          'note': tc['note'],
+        };
+
         return {
           'id_donhang': idDon,
           'id_mon': item.mon.id_mon,
           'soluong': item.soLuong,
           'giaban': item.giaBan,
-          'tuychon_json': item.tuyChon,
+          'tuychon_json': tuyChonClean,
         };
       }).toList();
 
@@ -155,6 +149,8 @@ class CartController extends ChangeNotifier {
     }
   }
 
+  // =============================
+  //        THANH TOÁN
   Future<String?> thanhToan(int idBan) async {
     try {
       final existing = await _supabase
@@ -190,5 +186,37 @@ class CartController extends ChangeNotifier {
     } catch (e) {
       return "Lỗi thanh toán: $e";
     }
+  }
+
+  // =============================
+  //        VOUCHER
+  /// Load các voucher mà khách đang sở hữu và chưa sử dụng
+  Future<List<Map<String, dynamic>>> loadVouchers() async {
+    try {
+      final idKhach = await getIdKhachHangFromUid();
+
+      final data = await _supabase.from('khachhang_voucher').select('''
+            id_khv,
+            id_voucher,
+            trangthai,
+            voucher(ten_voucher, phantram_giam, diem_doi, ngayhethan)
+          ''').eq('id_khachhang', idKhach).eq('trangthai', 'CHUA_SU_DUNG');
+
+      return List<Map<String, dynamic>>.from(data);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /// Áp dụng voucher vào đơn hàng
+  void applyVoucher(Map<String, dynamic> voucher) {
+    _appliedVoucher = voucher;
+    notifyListeners();
+  }
+
+  /// Gỡ voucher khỏi đơn hàng
+  void removeVoucher() {
+    _appliedVoucher = null;
+    notifyListeners();
   }
 }
