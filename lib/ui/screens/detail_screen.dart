@@ -112,9 +112,9 @@ class _DetailScreenState extends State<DetailScreen> {
       soLuong: 1,
       giaBan: _totalPrice,
       tuyChon: {
-        "size": _selectedSize?.tensize ?? "Mặc định",
+        "size": _selectedSize?.tensize ?? "M",
         "toppings": _selectedToppings.map((t) => t.tentopping).toList(),
-        "note": _note,
+        "ghichu": _note,
         "idBan": widget.idBan ?? 1,
         "idKhachHang": widget.idKhachHang ?? 4,
       },

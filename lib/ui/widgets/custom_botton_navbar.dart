@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_coffee_shop_app/ui/screens/order_detail_screen.dart';
 import 'package:stylish_bottom_bar/stylish_bottom_bar.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
 import 'package:flutter_coffee_shop_app/ui/theme/app_theme.dart';
 import 'package:flutter_coffee_shop_app/ui/screens/home_screen.dart';
 import 'package:flutter_coffee_shop_app/ui/screens/cart_screen.dart';
@@ -147,9 +147,23 @@ class _CustomNavBarState extends State<CustomNavBar> {
             break;
 
           case 2:
+            if (_idKhach == null) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text("⚠️ Bạn chưa đăng nhập!"),
+                  backgroundColor: Colors.orange,
+                ),
+              );
+              return;
+            }
+
             Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const QrScanScreen()),
+              MaterialPageRoute(
+                builder: (_) => OrderDetailScreen(
+                  idBan: widget.idBan,
+                ),
+              ),
             );
             break;
 
